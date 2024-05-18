@@ -18,33 +18,29 @@
  *   along with SimpleHTTP.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "Server.h"
+#include "Router.h"
 #include <queue>
+
 
 using namespace SimpleHTTP;
 
-void Server::addHandler(string path, RequestHandler handler)
-{
-	handlers[path] = handler;
-}
 
 err_t Server::tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
 {
 
-	for (int i = 0; i < maxClientConnections; i++)
-	{
-		if (!clients[i].isConnected())
-		{
-			tcp_arg(newpcb, &clients[i]);
-			tcp_err(newpcb, tcp_err_cb);
-			tcp_sent(newpcb, tcp_sent_cb);
-			tcp_recv(newpcb, tcp_recv_cb);
-			clients[i].init(newpcb);
-			return ERR_OK;
-		}
+	auto conn = Router::getFreeConnection();
+	if( conn == 0 ){
+		tcp_abort(newpcb);
+		return ERR_ABRT;
 	}
 
-	tcp_abort(newpcb);
-	return ERR_ABRT;
+	tcp_arg(newpcb, conn);
+	tcp_err(newpcb, tcp_err_cb);
+	tcp_sent(newpcb, tcp_sent_cb);
+	tcp_recv(newpcb, tcp_recv_cb);
+	conn->init(newpcb);
+	return ERR_OK;
+	
 }
 
 err_t Server::tcp_recv_cb(void *arg, struct tcp_pcb *tpcb, struct pbuf *p,
@@ -129,77 +125,4 @@ void Server::listen(int port)
 	return;
 }
 
-void Server::internalDefaultHandler(Request *req, Response *resp)
-{
-	string html = "<html><body> path was not found</body></html>";
-	resp->writeHeader(Response::NotFound);
-	resp->writeHeaderLine(SIMPLE_STR("Content-Type: text/html"));
-	resp->write(html.c_str(), html.size());
-}
-
-void Server::setDefaultHandler(RequestHandler handler)
-{
-	if (handler)
-	{
-		defaultHandler = handler;
-	}
-	else
-	{
-		defaultHandler = internalDefaultHandler;
-	}
-}
-
-void Server::process()
-{
-	for (int i = 0; i < maxClientConnections; i++)
-	{
-		if (clients[i].isConnected())
-		{
-			auto client = &clients[i];
-			if (client->currentRequest.receivedAllHeaders())
-			{
-
-				bool connectionKeepAlive = false;
-				auto connHeader = client->currentRequest.headers["CONNECTION"];
-				if (connHeader == "keep-alive")
-				{
-					connectionKeepAlive = true;
-				}
-
-				Response resp(client, connectionKeepAlive);
-				auto path = client->currentRequest.path;
-
-				auto h = handlers[path];
-				if (h == 0)
-				{
-					defaultHandler(&client->currentRequest, &resp);
-				}
-				else
-				{
-					h(&client->currentRequest, &resp);
-				}
-
-				resp.finalize();
-				client->flushData();
-				client->currentRequest.reset();
-				client->lastRequestTime = os_getUnixTime();
-				if (resp.getConnectionMode() == Response::ConnectionClose)
-				{
-					client->closeOnceSent = resp.getResponseSizeSent();
-				}
-			}
-			else
-			{
-				if (!client->hijacted && client->lastRequestTime != 0 && os_getUnixTime() - client->lastRequestTime > KeepaliveTimeout)
-				{
-					client->close();
-				}
-			}
-		}
-	}
-}
-
 struct tcp_pcb *Server::tcpServer = 0;
-ServerConnection Server::clients[];
-std::map<string, RequestHandler> Server::handlers;
-RequestHandler Server::defaultHandler = Server::internalDefaultHandler;

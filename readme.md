@@ -12,9 +12,10 @@ a header file with embedded files to be served can be generated using
 
 ```cpp
 #include "Server.h"
+#include "Router.h"
 
 //add a handler
-SimpleHTTP::Server::addHandler("/", [](SimpleHTTP::Request *req, SimpleHTTP::Response *resp)
+SimpleHTTP::Router::addHandler("/", [](SimpleHTTP::Request *req, SimpleHTTP::Response *resp)
 {
     resp->writeHeaderLine("Content-Type", "text/html");
     resp->write("<h1>Hello World</h1>");
@@ -23,7 +24,7 @@ SimpleHTTP::Server::addHandler("/", [](SimpleHTTP::Request *req, SimpleHTTP::Res
 SimpleHTTP::Server::listen(80);
 
 //in main loop (or within a task if using RTOS)
-SimpleHTTP::Server::process();
+SimpleHTTP::Router::process();
 ```
 
 ## Websocket ##
@@ -31,6 +32,7 @@ SimpleHTTP::Server::process();
 
 ```cpp
 #include "Server.h"
+#include "Router.h"
 #include "WebSocketManager.h"
 WebsocketManager::setFrameReceivedHandler([](Websocket *sock, SimpleHTTP::Websocket::Frame *frame)
 {
@@ -40,7 +42,7 @@ WebsocketManager::setFrameReceivedHandler([](Websocket *sock, SimpleHTTP::Websoc
 });
 
 //add a handler
-SimpleHTTP::Server::addHandler("/ws", [](SimpleHTTP::Request *req, SimpleHTTP::Response *resp)
+SimpleHTTP::Router::addHandler("/ws", [](SimpleHTTP::Request *req, SimpleHTTP::Response *resp)
 {
     auto origin = req->headers["ORIGIN"];
     if( origin.empty() || o != "http://expected-orign" ) {
@@ -54,7 +56,7 @@ SimpleHTTP::Server::addHandler("/ws", [](SimpleHTTP::Request *req, SimpleHTTP::R
 SimpleHTTP::Server::listen(80);
 
 //in main loop (or within a task if using RTOS)
-SimpleHTTP::Server::process();
+SimpleHTTP::Router::process();
 SimpleHTTP::WebsocketManager::process();
 ```
 
@@ -67,6 +69,7 @@ first generate the header file
 ```cpp
 #include "files.h"
 #include "Server.h"
+#include "Router.h"
 #include "EmbeddedFiles.h"
 //register the files array with the wrapper
 SimpleHTTP::EmbeddedFilesHandler::addFiles(
@@ -74,13 +77,13 @@ SimpleHTTP::EmbeddedFilesHandler::addFiles(
     sizeof(files) / sizeof(FileContent),(SimpleHTTP::EmbeddedFileType*)filesType);
 
 //set the wrapper as the default handler
-SimpleHTTP::Server::setDefaultHandler(SimpleHTTP::EmbeddedFilesHandler::embeddedFilesHandler);
+SimpleHTTP::Router::setDefaultHandler(SimpleHTTP::EmbeddedFilesHandler::embeddedFilesHandler);
 
 //open port (may need to wait for the network to be up)
 SimpleHTTP::Server::listen(80);
 
 //in main loop (or within a task if using RTOS)
-SimpleHTTP::Server::process();
+SimpleHTTP::Router::process();
 ```
 ## Known Issues ##
 
