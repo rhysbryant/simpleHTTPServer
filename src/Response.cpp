@@ -75,7 +75,7 @@ bool Response::appendBodyPrefix(char* data, int size) {
 }
 
 bool Response::appendBody(char* body, int size) {
-	if (responseBufferPos + size >= responseBufferEnd) {
+	if (responseBufferPos + size > responseBufferEnd) {
 		return false;
 	}
 
@@ -93,14 +93,26 @@ int Response::write(const char* data, int length) {
 
 	int remainingDataLength = length;
 	while (remainingDataLength > 0) {
-		int avBuffer = (responseBufferEnd - (ChunkedTransferSizeHeaderSize * 2)) - responseBufferPos;
+		int avBuffer = (responseBufferEnd - responseBufferPos);
+		//account for EOL required for chunked transfer
+		if (chunkedEncoding) {
+			if (avBuffer > 2) {
+				avBuffer -= sizeof(EOL);
+			}
+			else {
+				avBuffer = 0;
+			}
+		}
+
 		int lengthToCopy = remainingDataLength;
 
 		if (remainingDataLength > avBuffer) {
 			lengthToCopy = avBuffer;
 		}
 
-		appendBody((char*)data, lengthToCopy);
+		if (!appendBody((char*)data, lengthToCopy)) {
+			return length - remainingDataLength;
+		}
 
 		data += lengthToCopy;
 		remainingDataLength -= lengthToCopy;
