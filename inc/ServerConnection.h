@@ -49,7 +49,7 @@ namespace SimpleHTTP {
 
 		// allow writeData calls with a size larger then the IP stacks sent buffer
 		// by using a queue
-		static const int maxSendSize = 4096;
+
 		struct ChunkForSend {
 			const uint8_t* data;
 			const uint16_t size;
@@ -61,7 +61,18 @@ namespace SimpleHTTP {
 
 		bool sendNextFromQueue();
 
+		static inline int writePlainText(tcp_pcb* pcb, const void* dataptr, u16_t len, uint8_t apiflags) {
+
+			if (tcp_write(pcb,(uint8_t*) dataptr, len, apiflags) != ERR_OK) {
+				return ErrWriteDataFailed;
+			}
+			tcp_output(pcb);
+			return len;
+		}
+
 	public:
+		static const int maxSendSize = 4096;
+
 		uint32_t lastRequestTime;
 
 		Request currentRequest;
@@ -85,7 +96,15 @@ namespace SimpleHTTP {
 
 		ServerConnection();
 
+		static const int ErrWriteDataFailed = -1;
+
+		typedef int (*WriteData) (tcp_pcb *pcb, const void *dataptr, u16_t len, uint8_t apiflags);
+		private:
+			WriteData writeDataInternal;
+		public:
+
 		void init(struct tcp_pcb* client);
+		void init(struct tcp_pcb* client, WriteData callback);
 		/**
 		 * internal method only
 		 * in this context result means
@@ -99,7 +118,7 @@ namespace SimpleHTTP {
 		 * writes data to the client connection
 		 *
 		 */
-		virtual inline bool write(uint8_t* data, uint16_t len) {
+		virtual inline bool write_old(uint8_t* data, uint16_t len) {
 			LOCK_TCPIP_CORE();
 			if( client == 0 ){
 				UNLOCK_TCPIP_CORE();
@@ -113,13 +132,19 @@ namespace SimpleHTTP {
 			return result;
 		}
 
-		virtual bool writeData(uint8_t* data, int len, uint8_t apiFlags);
+		static const int WriteFlagNoLock = 1;
+		//don't copy the data
+		static const int WriteFlagZeroCopy = 2;
+		static const int WriteFlagNoFlush = 4;
+
+		
+		bool writeData(uint8_t* data, int len, int writeFlags);
 
 		/*
 		 * writes data to the client connection and flushes it
 		 *TCP_WRITE_FLAG_COPY
 		 */
-		inline bool writeDataAndFlush(uint8_t* data, uint16_t len) {
+		inline bool writeDataAndFlush_old(uint8_t* data, uint16_t len) {
 			LOCK_TCPIP_CORE();
 			if( client == 0 ){
 				UNLOCK_TCPIP_CORE();
@@ -134,7 +159,7 @@ namespace SimpleHTTP {
 			return result;
 		}
 
-		inline bool flushData() {
+		inline bool flushData_old() {
 			LOCK_TCPIP_CORE();
 			if( client == 0 ){
 				UNLOCK_TCPIP_CORE();

@@ -20,7 +20,7 @@
 #include "WebSocketManager.h"
 #include "Request.h"
 #include "Response.h"
-
+#include "log.h"
 #include "libsha1.h"
 extern "C" {
 #include "cencode.h"
@@ -91,7 +91,7 @@ int WebsocketManager::acceptKey(string clientKey, char* outputBuffer)
 }
 
 Result WebsocketManager::dataReceivedHandler(void* arg, uint8_t* data, uint16_t len){
-
+	SHTTP_LOGI(__FUNCTION__,"got dataReceivedHandler: %d bytes",len);
     auto ws = static_cast<Websocket*>(arg);
 
 	if( data == 0 && len == 0){
@@ -101,6 +101,7 @@ Result WebsocketManager::dataReceivedHandler(void* arg, uint8_t* data, uint16_t 
 
     if (!ws->bufferLock())
     {
+		SHTTP_LOGE(__FUNCTION__,"buffer lock failed");
         return ERROR;
     }
     
@@ -134,9 +135,15 @@ void WebsocketManager::process(){
 			if (!ws->bufferLock()){
 				return;
 			}
-
+			uint8_t buffer[1024];
 			Websocket::Frame f;
-            if ( ws->nextFrame(&f) == OK ){
+			f.payload = buffer;
+			f.payloadLength = sizeof(buffer);
+			auto gotMessage = ws->nextFrame(&f) == OK;
+
+			ws->bufferUnLock();
+            
+			if ( gotMessage ){
 
 
 				frameReceivedHandler(&connections[i],&f);
@@ -151,17 +158,24 @@ void WebsocketManager::process(){
 					ws->lastPongReceived = os_getUnixTime();
 				}
 
-				ws->resetBuffer();
 			}else if( os_getUnixTime() - ws->lastPingSent > 15000 ){
+
+				if( ws->lastPongReceived != 0 && os_getUnixTime() -  ws->lastPongReceived > 60000 ){
+					ws->getConnection()->closeWithOutLocking();
+					return;
+				}
+
 				if( ws->writeFrame(Websocket::FrameTypePing,"",0,"",0) == ERROR ) {
+					SHTTP_LOGE(__FUNCTION__,"closing due to ping error");
 					ws->getConnection()->close();
 				}
 				ws->lastPingSent = os_getUnixTime();
-			}else if( ws->lastPongReceived != 0 && os_getUnixTime() - ws->lastPongReceived > 30000 && !ws->isCloseRequestedByServer() ){
+			}else if( ws->lastPongReceived != 0 &&  os_getUnixTime() - ws->lastPingSent > 30000 && !ws->isCloseRequestedByServer() ){
+				SHTTP_LOGE(__FUNCTION__,"pong timeout %d %d",(int)ws->lastPingSent ,(int) ws->lastPongReceived );
 				ws->sendCloseFrame(66);
 			}
 
-			ws->bufferUnLock();
+			
 		}
 	}
 }

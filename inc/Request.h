@@ -45,18 +45,22 @@ namespace SimpleHTTP {
 		static constexpr const char ContentLengthHeaderName[] = "CONTENT-LENGTH";
 
 		char requestBuffer[requestBufferSize];
-		char* requestBufferPos;
+		char* requestBufferWritePos;
+		char* requestBufferReadPos;
 		char* requestBufferEnd;
 		int lastBodyOutputBytesWritten;
 
 		Result appendToBuffer(char* data, int size);
 		
 		inline void resetBuffer() {
-			requestBufferPos = requestBuffer;
+			requestBufferWritePos = requestBuffer;
+			requestBufferReadPos = requestBuffer;
+			requestBufferEnd = requestBuffer;
 		}
 
 		bool bodyEncodingChunked;
 		int bodyLength;
+		bool bodyReadInProgress;
 
 	public:
 		static const int requestMethodsCount = 7;
@@ -111,6 +115,7 @@ namespace SimpleHTTP {
 		Result unReadBody();
 
 		inline int getBodyLength() { return bodyLength;  }
+		inline bool isBodyReadInProgress() { return bodyReadInProgress; }
 
 	private:
 		static const constexpr struct SimpleString requestMethods[] = {

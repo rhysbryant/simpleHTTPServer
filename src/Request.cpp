@@ -27,13 +27,15 @@ Request::Request() {
 }
 
 Result Request::parse(char* data, int length) {
-
-	if (appendToBuffer(data, length) == ERROR) {
-		return ERROR;
+	if (lastResult == MoreData) {
+		if (appendToBuffer(data, length) == ERROR) {
+			return ERROR;
+		}
+		data = requestBufferReadPos;
+		length = requestBufferWritePos - requestBufferReadPos;
 	}
-	data = requestBuffer;
-	length = requestBufferPos - requestBuffer;
 
+	char* dataStartPtr = data;
 	char* dataEndPtr = data + length;
 	switch (parsingStage) {
 	case WaitingRequestLine:
@@ -41,35 +43,36 @@ Result Request::parse(char* data, int length) {
 		auto strMethod = nextToken({ data,length }, SpaceChar);
 
 		if (strMethod.size == 0) {
-			return Result::MoreData;
+			goto moreData;
 		}
 		auto m = parseMethod(strMethod);
 		if (m == UnknownMethod) {
 			return ERROR;
 		}
 
+		char* resetToPos = data;
 		data += strMethod.size + 1;
+
 
 		auto strPath = nextToken({ data,(int)(dataEndPtr - data) }, SpaceChar);
 		if (strPath.size == 0) {
-			lastResult = Result::MoreData;
-			return MoreData;
+			data = resetToPos;
+			goto moreData;
 		}
 
 		data += strPath.size + 1;
 
 		auto strHTTPVersion = nextEOL({ data,(int)(dataEndPtr - data) }, &data);
 		if (strHTTPVersion.size == 0) {
-			lastResult = Result::MoreData;
-			return MoreData;
+			data = resetToPos;
+			goto moreData;
 		}
 		auto httpVersion = parseHTTPVersion({ strHTTPVersion.value,strHTTPVersion.size });
 		if (httpVersion == Error) {
 			return ERROR;
 		}
 		else if (httpVersion == VersionUnknown) {
-			lastResult = Result::MoreData;
-			return MoreData;
+			goto moreData;
 		}
 
 		method = m;
@@ -81,6 +84,7 @@ Result Request::parse(char* data, int length) {
 	case WaitingHeaders:
 	{
 		int contentLength = 0;
+		char* start = data;
 		while (true) {
 			auto header = parseHeaderLine({ data,(int)(dataEndPtr - data) }, &data);
 			if (header.name.size == 0) {
@@ -95,12 +99,13 @@ Result Request::parse(char* data, int length) {
 
 			headers[headerName] = header.value;
 			//if there is a body gather some info on how it's encoded
-			if( methodHasBody[method] ){
-				if( headerName == ContentLengthHeaderName ){
+			if (methodHasBody[method]) {
+				if (headerName == ContentLengthHeaderName) {
 					bodyLength = std::stoi(header.value);
 
-				}else if( headerName == TransferEncodingHeaderName ){
-					if( header.value == "Chunked" || header.value == "chunked" ){
+				}
+				else if (headerName == TransferEncodingHeaderName) {
+					if (header.value == "Chunked" || header.value == "chunked") {
 						bodyEncodingChunked = true;
 					}
 				}
@@ -112,6 +117,10 @@ Result Request::parse(char* data, int length) {
 			data += endOfHeaders;
 			parsingStage = WaitingBody;
 		}
+		else {
+			data = start;
+			goto moreData;
+		}
 	}
 	case WaitingBody:
 	{
@@ -121,26 +130,37 @@ Result Request::parse(char* data, int length) {
 		}
 
 		if (bodyEncodingChunked || bodyLength != 0) {
-			requestBufferPos = data;
-			return MoreData;
+			goto moreData;
 		}
 	}
 	case WaitingComplete:
-	;
+		;
 	}
 
 
 	return ERROR;
+moreData:
+	if (lastResult == MoreData) {
+		requestBufferReadPos = data;
+
+	}
+	else {
+		appendToBuffer(data, dataEndPtr - data);
+		lastResult = MoreData;
+	}
+
+	return MoreData;
+
 }
 
 Result  Request::appendToBuffer(char* data, int size) {
 
-	if (requestBufferPos + size > requestBuffer + requestBufferSize) {
+	if (requestBufferWritePos + size > requestBuffer + requestBufferSize) {
 		return ERROR;
 	}
 
-	memcpy(requestBufferPos, data, size);
-	requestBufferPos += size;
+	memcpy(requestBufferWritePos, data, size);
+	requestBufferWritePos += size;
 	requestBufferEnd += size;
 	return MoreData;
 }
@@ -171,6 +191,10 @@ HTTPHeader Request::parseHeaderLine(SimpleString data, char** eolEndPosPtr) {
 	}
 
 	int offset = headerName.size + 2;
+	if (offset >= data.size) {
+		return { 0 };
+	}
+
 	auto value = nextEOL({ data.value + offset,data.size - offset }, eolEndPosPtr);
 
 	if (value.value == 0) {
@@ -231,29 +255,31 @@ Result Request::readBody(char* dstBuffer, int* dstBufferSize) {
 	int outputBufferSize = *dstBufferSize;
 	int outputBytesWritten = 0;
 	bool atEndOfBuffer = false;
+	bodyReadInProgress = true;
 	//if the body is chunked it should start with the chunk size in hex followed by a new line
-	
+
 	if (bodyLength == 0) {
 		if (!bodyEncodingChunked) {
 			return ERROR;
 		}
-tryReadNextChunk:
-		auto strChunkSize = nextEOL({requestBufferPos,(int)(requestBufferEnd - requestBuffer)}, &requestBufferPos);
-		if (strChunkSize.value == nullptr) {
+	tryReadNextChunk:
+		auto strChunkSize = nextEOL({ requestBufferReadPos,(int)(requestBufferEnd - requestBuffer) }, &requestBufferReadPos);
+		if (strChunkSize.value == nullptr) {		
 			return MoreData;
 		}
 
 		bodyLength = std::stoi(string(strChunkSize.value, strChunkSize.size), 0, 16);
-		if (bodyLength == 0 && isEOL({ requestBufferPos,(int)(requestBufferEnd - requestBuffer) })) {
+		if (bodyLength == 0 && isEOL({ requestBufferReadPos,(int)(requestBufferEnd - requestBuffer) })) {
 			*dstBufferSize = outputBytesWritten;
 			lastBodyOutputBytesWritten = outputBytesWritten;
+			bodyReadInProgress = false;
 			return OK;
 		}
 	}
-	
+
 	if (bodyLength != 0) {
 		int sizeToCopy = bodyLength;
-		int dataInRequestBuffer = requestBufferEnd - requestBufferPos;
+		int dataInRequestBuffer = requestBufferEnd - requestBufferReadPos;
 		if (sizeToCopy >= dataInRequestBuffer) {
 			sizeToCopy = dataInRequestBuffer;
 			atEndOfBuffer = true;
@@ -264,15 +290,15 @@ tryReadNextChunk:
 			sizeToCopy = spaceInDstBuffer;
 		}
 
-		memcpy(dstBuffer, requestBufferPos, sizeToCopy);
-		requestBufferPos += sizeToCopy;
+		memcpy(dstBuffer, requestBufferReadPos, sizeToCopy);
+		requestBufferReadPos += sizeToCopy;
 		bodyLength -= sizeToCopy;
 		outputBytesWritten += sizeToCopy;
 		*dstBufferSize = outputBytesWritten;
 		lastBodyOutputBytesWritten = outputBytesWritten;
 
 		if (bodyLength == 0 && bodyEncodingChunked) {
-			nextEOL({ requestBufferPos,(int)(requestBufferEnd - requestBuffer) }, &requestBufferPos);
+			nextEOL({ requestBufferReadPos,(int)(requestBufferEnd - requestBuffer) }, &requestBufferReadPos);
 			goto tryReadNextChunk;
 		}
 	}
@@ -281,7 +307,8 @@ tryReadNextChunk:
 		resetBuffer();
 	}
 
-	if(bodyLength == 0) {
+	if (bodyLength == 0) {
+		bodyReadInProgress = false;
 		return OK;
 	}
 	else {
@@ -290,10 +317,10 @@ tryReadNextChunk:
 }
 
 Result Request::unReadBody() {
-	if (requestBufferPos - lastBodyOutputBytesWritten <= requestBuffer) {
+	if (requestBufferReadPos - lastBodyOutputBytesWritten <= requestBuffer) {
 		return ERROR;
 	}
-	requestBufferPos -= lastBodyOutputBytesWritten;
+	requestBufferReadPos -= lastBodyOutputBytesWritten;
 
 	return OK;
 }
@@ -303,9 +330,11 @@ void Request::reset() {
 	method = UnknownMethod;
 	parsingStage = WaitingRequestLine;
 	lastResult = Result::OK;
-	requestBufferPos = requestBuffer;
+	requestBufferWritePos = requestBuffer;
+	requestBufferReadPos = requestBuffer;
 	requestBufferEnd = requestBuffer;
 	bodyEncodingChunked = false;
+	bodyReadInProgress = false;
 	lastBodyOutputBytesWritten = 0;
 	headers.clear();
 	path.clear();

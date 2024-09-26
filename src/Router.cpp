@@ -18,6 +18,7 @@
  *   along with SimpleHTTP.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "Router.h"
+#include "esp_log.h"
 using namespace SimpleHTTP;
 
 void Router::addHandler(string path, RequestHandler handler)
@@ -75,13 +76,17 @@ void Router::process()
 					h(&client->currentRequest, &resp);
 				}
 
-				resp.finalize();
-				client->flushData();
-				client->currentRequest.reset();
-				client->lastRequestTime = os_getUnixTime();
-				if (resp.getConnectionMode() == Response::ConnectionClose)
-				{
-					client->closeOnceSent = resp.getResponseSizeSent();
+				if( ! client->currentRequest.isBodyReadInProgress() ){
+					resp.finalize();
+                
+					client->currentRequest.reset();
+					client->lastRequestTime = os_getUnixTime();
+					if (resp.getConnectionMode() == Response::ConnectionClose)
+					{
+						client->closeOnceSent = resp.getResponseSizeSent();
+					}
+				}else{
+					resp.flush();
 				}
 			}
 			else
@@ -101,6 +106,13 @@ ServerConnection* Router::getFreeConnection() {
 		if (!clients[i].isConnected())
 		{
             return &clients[i];
+        }
+    }
+    for (int i = 0; i < maxClientConnections; i++)
+	{
+		if (clients[i].isConnected())
+		{
+            ESP_LOGE(__FUNCTION__,"client %d",(int)clients[i].hijacted);
         }
     }
     return nullptr;

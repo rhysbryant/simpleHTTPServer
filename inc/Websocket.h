@@ -21,7 +21,8 @@
 
 #include "Request.h"
 #include "Response.h"
-
+#include "CBuffer.h"
+#define RTOS
 namespace SimpleHTTP
 {
 	class Websocket
@@ -57,16 +58,19 @@ namespace SimpleHTTP
 		SemaphoreHandle_t _bufferLock;
 #endif
 		ServerConnection *conn;
-		char requestBuffer[requestBufferSize];
+		
+		char recvBufferBuff[requestBufferSize];
+		CBuffer recvBuffer;		
 		char* requestBufferPos;
-		Result appendToBuffer(char* data, int size);
+
 		int readFrame(Frame *frame);
 		bool closeRequestedByServer;
 		static const int opCodeMask=0x7f;
 
 	public:
-		static const char FlagFIN = 128;
-		static const char FlagMask = 128;
+
+		static const uint8_t FlagFIN = 128;
+		static const uint8_t FlagMask = 128;
 
 		bool isCloseRequestedByServer(){
 			return closeRequestedByServer;
@@ -92,7 +96,7 @@ namespace SimpleHTTP
 		*	parses data as a websocket frame and populates frame structure
 		*	if the frame is incomplete returns the amount of data missing 
 		**/
-		static int readFrame(char *data, int dataSize, Frame *frame);
+		int readFrame(char *data, int dataSize, Frame *frame);
 		/*
 		* returns true if a frame can be read from the internal buffer
 		*/
@@ -106,7 +110,7 @@ namespace SimpleHTTP
 		* reset the internal buffer
 		*/
 		inline void resetBuffer() {
-			requestBufferPos = requestBuffer;
+			recvBuffer.reset();
 		}
 		/**
 		 * populates the internal buffer used by readFrame()
@@ -144,7 +148,7 @@ namespace SimpleHTTP
 		bool bufferLock();
 		void bufferUnLock();
 
-		Websocket(){resetBuffer();_bufferLock = xSemaphoreCreateMutex();unAssign(); }
+		Websocket():recvBuffer(recvBufferBuff,sizeof(recvBufferBuff)){resetBuffer();_bufferLock = xSemaphoreCreateMutex();unAssign(); }
 
 	};
 

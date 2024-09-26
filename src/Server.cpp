@@ -58,7 +58,11 @@ err_t Server::tcp_recv_cb(void *arg, struct tcp_pcb *tpcb, struct pbuf *p,
 
 		if (conn->dataReceived)
 		{
-			conn->dataReceived(conn->dataReceivedArg, (uint8_t *)p->payload, p->len);
+			auto pack = p;
+			while(pack){
+				conn->dataReceived(conn->dataReceivedArg, (uint8_t *)pack->payload, pack->len);
+				pack = p->next;
+			}
 		}
 		else
 		{

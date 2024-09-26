@@ -38,7 +38,7 @@ namespace SimpleHTTP {
 		static const constexpr char EOL[] = { '\r','\n' };
 
 		static const int responseBufferSize = 512;
-		static const int responseBufferHeadersReservedSize = 256;
+		static const int responseBufferHeadersReservedSize = 128;
 		//mainly for chunked transfer where EOL is appended to the buffer before sending
 		static const int responseBufferBodyReservedSize = sizeof(EOL);
 

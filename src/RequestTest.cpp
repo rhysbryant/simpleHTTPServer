@@ -74,6 +74,19 @@ TEST(Request, fullRequestGET) {
 	GTEST_ASSERT_EQ(r.headers["HOST"], "hello");
 	GTEST_ASSERT_EQ(r.path, "/abc");
 }
+
+TEST(Request, requestGET) {
+	Request r;
+	string req("GET /abc HTTP/1.1\r\nHost: hello\r\n\r\n");
+	const char* strRequest = req.c_str();
+
+	while (r.parse((char*)strRequest, 1) == MoreData) strRequest++;
+	//GTEST_ASSERT_EQ(result, Result::OK);
+	GTEST_ASSERT_EQ(r.method, Request::GET);
+	GTEST_ASSERT_EQ(r.headers["HOST"], "hello");
+	GTEST_ASSERT_EQ(r.path, "/abc");
+}
+
 //one parse call consumes the full payload
 TEST(Request, fullRequestPOSTFullBodyContentLength) {
 	Request r;
