@@ -31,8 +31,8 @@ Result Request::parse(char* data, int length) {
 		if (appendToBuffer(data, length) == ERROR) {
 			return ERROR;
 		}
-		data = requestBufferReadPos;
-		length = requestBufferWritePos - requestBufferReadPos;
+		data = &requestBuffer[bufferReadPos];
+		length = requestBuffer.size() - bufferReadPos;
 	}
 
 	char* dataStartPtr = data;
@@ -130,6 +130,7 @@ Result Request::parse(char* data, int length) {
 		}
 
 		if (bodyEncodingChunked || bodyLength != 0) {
+			hasMoreBodyDataSinceLastCheck = true;
 			goto moreData;
 		}
 	}
@@ -141,7 +142,7 @@ Result Request::parse(char* data, int length) {
 	return ERROR;
 moreData:
 	if (lastResult == MoreData) {
-		requestBufferReadPos = data;
+		bufferReadPos = data - requestBuffer.data();
 
 	}
 	else {
@@ -154,14 +155,7 @@ moreData:
 }
 
 Result  Request::appendToBuffer(char* data, int size) {
-
-	if (requestBufferWritePos + size > requestBuffer + requestBufferSize) {
-		return ERROR;
-	}
-
-	memcpy(requestBufferWritePos, data, size);
-	requestBufferWritePos += size;
-	requestBufferEnd += size;
+	requestBuffer.insert(requestBuffer.end(),data,data+size);
 	return MoreData;
 }
 
@@ -256,6 +250,10 @@ Result Request::readBody(char* dstBuffer, int* dstBufferSize) {
 	int outputBytesWritten = 0;
 	bool atEndOfBuffer = false;
 	bodyReadInProgress = true;
+
+	char* requestBufferReadPos = &requestBuffer[bufferReadPos];
+	const char* requestBufferEnd = requestBuffer.data() + requestBuffer.size();
+
 	//if the body is chunked it should start with the chunk size in hex followed by a new line
 
 	if (bodyLength == 0) {
@@ -263,16 +261,17 @@ Result Request::readBody(char* dstBuffer, int* dstBufferSize) {
 			return ERROR;
 		}
 	tryReadNextChunk:
-		auto strChunkSize = nextEOL({ requestBufferReadPos,(int)(requestBufferEnd - requestBuffer) }, &requestBufferReadPos);
+		auto strChunkSize = nextEOL({ requestBufferReadPos,(int)(requestBuffer.size()) }, &requestBufferReadPos);
 		if (strChunkSize.value == nullptr) {		
 			return MoreData;
 		}
 
 		bodyLength = std::stoi(string(strChunkSize.value, strChunkSize.size), 0, 16);
-		if (bodyLength == 0 && isEOL({ requestBufferReadPos,(int)(requestBufferEnd - requestBuffer) })) {
+		if (bodyLength == 0 && isEOL({ requestBufferReadPos,(int)(requestBuffer.size()) })) {
 			*dstBufferSize = outputBytesWritten;
 			lastBodyOutputBytesWritten = outputBytesWritten;
 			bodyReadInProgress = false;
+			bufferReadPos = requestBufferEnd - requestBufferReadPos;
 			return OK;
 		}
 	}
@@ -298,7 +297,7 @@ Result Request::readBody(char* dstBuffer, int* dstBufferSize) {
 		lastBodyOutputBytesWritten = outputBytesWritten;
 
 		if (bodyLength == 0 && bodyEncodingChunked) {
-			nextEOL({ requestBufferReadPos,(int)(requestBufferEnd - requestBuffer) }, &requestBufferReadPos);
+			nextEOL({ requestBufferReadPos,(int)(requestBuffer.size()) }, &requestBufferReadPos);
 			goto tryReadNextChunk;
 		}
 	}
@@ -306,6 +305,8 @@ Result Request::readBody(char* dstBuffer, int* dstBufferSize) {
 	if (atEndOfBuffer) {
 		resetBuffer();
 	}
+
+	bufferReadPos = requestBufferEnd - requestBufferReadPos;
 
 	if (bodyLength == 0) {
 		bodyReadInProgress = false;
@@ -317,10 +318,10 @@ Result Request::readBody(char* dstBuffer, int* dstBufferSize) {
 }
 
 Result Request::unReadBody() {
-	if (requestBufferReadPos - lastBodyOutputBytesWritten <= requestBuffer) {
+	if (bufferReadPos - lastBodyOutputBytesWritten <= 0) {
 		return ERROR;
 	}
-	requestBufferReadPos -= lastBodyOutputBytesWritten;
+	bufferReadPos -= lastBodyOutputBytesWritten;
 
 	return OK;
 }
@@ -330,11 +331,10 @@ void Request::reset() {
 	method = UnknownMethod;
 	parsingStage = WaitingRequestLine;
 	lastResult = Result::OK;
-	requestBufferWritePos = requestBuffer;
-	requestBufferReadPos = requestBuffer;
-	requestBufferEnd = requestBuffer;
+	requestBuffer.clear();
 	bodyEncodingChunked = false;
 	bodyReadInProgress = false;
+	hasMoreBodyDataSinceLastCheck = false;
 	lastBodyOutputBytesWritten = 0;
 	headers.clear();
 	path.clear();

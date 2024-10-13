@@ -1,5 +1,4 @@
-#ifndef CBUFFER_H
-#define CBUFFER_H
+#pragma once
 #include <stdint.h>
 namespace SimpleHTTP{
 	class CBuffer
@@ -68,4 +67,4 @@ namespace SimpleHTTP{
 		char *tailMarker;
 	};
 };
-#endif
+

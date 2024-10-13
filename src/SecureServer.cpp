@@ -60,7 +60,6 @@ err_t SecureServer::tcp_accept_cb(void* arg, struct tcp_pcb* newpcb, err_t err)
 	auto s = new SSLConnection{
 
 	};
-	s->State = SSLConnection::HandShakeInProgress;
 	s->tpcb = newpcb;
 	s->bufTail.payload = nullptr;
 	s->conn = conn;
@@ -434,8 +433,7 @@ void SecureServer::tcp_err_cb(void* arg, err_t err)
 
 int SecureServer::sslSessionProcess(SSLConnection* conn) {
 
-	switch (conn->State) {
-	case SSLConnection::HandShakeInProgress:
+	if(!mbedtls_ssl_is_handshake_over(&conn->ssl))
 	{
 		auto result = mbedtls_ssl_handshake(&conn->ssl);
 		if (result != 0) {
@@ -450,12 +448,9 @@ int SecureServer::sslSessionProcess(SSLConnection* conn) {
 				return result;
 			}
 		}
-		else {
-			conn->State = SSLConnection::Ready;
-		}
-		break;
+
 	}
-	case SSLConnection::Ready:
+	else
 	{
 		//unsigned char buffer[512] = "";
 
@@ -482,8 +477,6 @@ int SecureServer::sslSessionProcess(SSLConnection* conn) {
 				break;
 			}
 		}
-		break;
-	}
 	}
 	return 0;
 }
@@ -496,12 +489,19 @@ int SecureServer::loadPrivateKey(SimpleString* pk) {
 }
 
 int SecureServer::loadCert(SimpleString* cert) {
-	if (crtInitDone) {
+	if (!crtInitDone) {
 		mbedtls_x509_crt_init(&srvcert);
 		crtInitDone = true;
 	}
 
 	return mbedtls_x509_crt_parse(&srvcert, (unsigned const char*)cert->value, cert->size);
+}
+
+mbedtls_x509_crt* SecureServer::getCertChain() {
+	if(!crtInitDone){
+		return 0;
+	}
+	return &srvcert;
 }
 
 int SecureServer::TLSInit() {

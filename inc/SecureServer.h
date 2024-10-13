@@ -72,10 +72,6 @@ namespace SimpleHTTP{
               tcp_pcb* tpcb;
               mbedtls_ssl_context ssl;
               ServerConnection* conn;
-              enum {
-                HandShakeInProgress,
-                Ready
-              } State;
             };
 
             
@@ -113,6 +109,7 @@ namespace SimpleHTTP{
         public:
             static int loadPrivateKey(SimpleString* cert);
             static int loadCert(SimpleString* cert);
+            static mbedtls_x509_crt* getCertChain();
             static int TLSInit();
             static void listen(int port);
 

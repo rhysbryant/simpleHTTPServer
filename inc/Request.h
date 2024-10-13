@@ -44,18 +44,15 @@ namespace SimpleHTTP {
 		static constexpr const char TransferEncodingHeaderName[] = "TRANSFER-ENCODING";
 		static constexpr const char ContentLengthHeaderName[] = "CONTENT-LENGTH";
 
-		char requestBuffer[requestBufferSize];
-		char* requestBufferWritePos;
-		char* requestBufferReadPos;
-		char* requestBufferEnd;
+		vector<char> requestBuffer;
+		int bufferReadPos;
 		int lastBodyOutputBytesWritten;
 
 		Result appendToBuffer(char* data, int size);
 		
 		inline void resetBuffer() {
-			requestBufferWritePos = requestBuffer;
-			requestBufferReadPos = requestBuffer;
-			requestBufferEnd = requestBuffer;
+			requestBuffer.clear();
+			bufferReadPos = 0;
 		}
 
 		bool bodyEncodingChunked;
@@ -101,6 +98,17 @@ namespace SimpleHTTP {
 		void reset();
 
 		inline bool receivedAllHeaders() { return parsingStage == WaitingBody || parsingStage == WaitingComplete; };
+		/*
+		* returns true if the request is ready for process or more body data has been received since
+		* last time this method was called
+		*/
+		inline bool getAndClearForProcessing() {
+			if(parsingStage == WaitingBody && hasMoreBodyDataSinceLastCheck){
+				return true;
+				hasMoreBodyDataSinceLastCheck = true;
+			}
+			return parsingStage == WaitingComplete;
+		}
 		/**
 		* read out the internal body buffer
 		* dstBufferSize in/out pass the buffer size
@@ -147,6 +155,8 @@ namespace SimpleHTTP {
 		 * accepts GET,POST, SEND or OPTIONS strings and returns the enum value
 		**/
 		Method parseMethod(SimpleString str);
+
+		bool hasMoreBodyDataSinceLastCheck;
 
 		HTTPVersion parseHTTPVersion(SimpleString str);
 		/**
