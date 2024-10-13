@@ -28,7 +28,7 @@ namespace SimpleHTTP {
 	//HTTP/1.1 Response Generation
 	class Response {
 	public:
-		enum ConnectionMode{
+		enum ConnectionMode {
 			ConnectionKeepAlive,
 			ConnectionUpgrade,
 			ConnectionClose
@@ -82,7 +82,7 @@ namespace SimpleHTTP {
 		 * writes the default status if no status has been written yet
 		 */
 		bool ensureStatusWritten();
-		
+
 		bool appendHeaders(char* headers, int size);
 
 		bool appendHeadersEOL();
@@ -149,7 +149,7 @@ namespace SimpleHTTP {
 		/**
 		 * writes directly to the network without buffering
 		 * this method flushes the buffer before it's starts writing
-		 * 
+		 *
 		 * this method does not block, it's expected the pointer will be always be valid
 		 */
 		int writeDirect(const char* data, int length);
@@ -182,9 +182,9 @@ namespace SimpleHTTP {
 		/**
 		 * returns the count of bytes sent
 		 */
-		inline int getResponseSizeSent() { return responseSizeTotal;}
+		inline int getResponseSizeSent() { return responseSizeTotal; }
 
-		inline void setConnectionMode(ConnectionMode connMode) { connectionMode=connMode; }
+		inline void setConnectionMode(ConnectionMode connMode) { connectionMode = connMode; }
 
 		inline ConnectionMode getConnectionMode() { return connectionMode; }
 	};

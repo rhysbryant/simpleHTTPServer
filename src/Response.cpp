@@ -127,8 +127,8 @@ int Response::write(const char* data, int length) {
 	return 0;
 }
 
-int Response::write(const char* data){
-	return write(data,strlen(data));
+int Response::write(const char* data) {
+	return write(data, strlen(data));
 }
 
 int Response::writeDirect(const char* data, int length) {
@@ -269,10 +269,11 @@ Result Response::flush(bool finalise) {
 		responseBufferBodyStart = responseBuffer + ChunkedTransferSizeHeaderSize;
 		responseBufferPos = responseBufferBodyStart;
 		responseHeaderBufferPos = responseBuffer;
-	}else if(chunkedEncoding){
+	}
+	else if (chunkedEncoding) {
 		responseBufferBodyStart = beforeChunkAdd;
 	}
-	
+
 	return result;
 }
 
@@ -282,7 +283,7 @@ ServerConnection* Response::hijackConnection() {
 }
 
 Result Response::networkWrite(char* data, int length) {
-	if (client->writeData((uint8_t*)data, length,0)) {
+	if (client->writeData((uint8_t*)data, length, 0)) {
 		responseSizeTotal += length;
 		return OK;
 	}

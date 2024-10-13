@@ -155,7 +155,7 @@ moreData:
 }
 
 Result  Request::appendToBuffer(char* data, int size) {
-	requestBuffer.insert(requestBuffer.end(),data,data+size);
+	requestBuffer.insert(requestBuffer.end(), data, data + size);
 	return MoreData;
 }
 
@@ -262,7 +262,7 @@ Result Request::readBody(char* dstBuffer, int* dstBufferSize) {
 		}
 	tryReadNextChunk:
 		auto strChunkSize = nextEOL({ requestBufferReadPos,(int)(requestBuffer.size()) }, &requestBufferReadPos);
-		if (strChunkSize.value == nullptr) {		
+		if (strChunkSize.value == nullptr) {
 			return MoreData;
 		}
 

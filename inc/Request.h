@@ -49,7 +49,7 @@ namespace SimpleHTTP {
 		int lastBodyOutputBytesWritten;
 
 		Result appendToBuffer(char* data, int size);
-		
+
 		inline void resetBuffer() {
 			requestBuffer.clear();
 			bufferReadPos = 0;
@@ -61,7 +61,7 @@ namespace SimpleHTTP {
 
 	public:
 		static const int requestMethodsCount = 7;
-		
+
 		enum Method : int {
 			GET = 0,
 			PUT,
@@ -103,7 +103,7 @@ namespace SimpleHTTP {
 		* last time this method was called
 		*/
 		inline bool getAndClearForProcessing() {
-			if(parsingStage == WaitingBody && hasMoreBodyDataSinceLastCheck){
+			if (parsingStage == WaitingBody && hasMoreBodyDataSinceLastCheck) {
 				return true;
 				hasMoreBodyDataSinceLastCheck = true;
 			}
@@ -113,7 +113,7 @@ namespace SimpleHTTP {
 		* read out the internal body buffer
 		* dstBufferSize in/out pass the buffer size
 		* on return it's set to the number of bytes written to the buffer
-		* 
+		*
 		**/
 		Result readBody(char* dstBuffer, int* dstBufferSize);
 		/*
@@ -122,7 +122,7 @@ namespace SimpleHTTP {
 		*/
 		Result unReadBody();
 
-		inline int getBodyLength() { return bodyLength;  }
+		inline int getBodyLength() { return bodyLength; }
 		inline bool isBodyReadInProgress() { return bodyReadInProgress; }
 
 	private:

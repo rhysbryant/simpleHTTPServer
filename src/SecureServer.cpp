@@ -40,9 +40,9 @@
  * before the previously sent data has been acked
  *
  * the two main use cases we need to account for are are lots of small chunks being sent in parallel and large of maxSendSize being sent one at a time
- * 
+ *
  * data receive flow
- * 
+ *
  * the pbuf from the lwip receive callback is queued and freed in the mbedtls mbedtls_tcp_recv callback
  * called from within mbedtls_ssl_read() and mbedtls_ssl_handshake()
  */
@@ -67,7 +67,7 @@ err_t SecureServer::tcp_accept_cb(void* arg, struct tcp_pcb* newpcb, err_t err)
 	s->writeBlockedWaitingOnAckForSize = 0;
 	s->clearWriteBlock = false;
 
-    s->plainTextLengthPendingNotification = 0;
+	s->plainTextLengthPendingNotification = 0;
 
 	conn->init(newpcb, tcp_write_tls);
 
@@ -93,24 +93,24 @@ err_t SecureServer::tcp_accept_cb(void* arg, struct tcp_pcb* newpcb, err_t err)
 
 }
 
-void SecureServer::cleanup(std::queue<ChunkForSend>& queue){
-    while(!queue.empty()){
-        auto item = &queue.front();
-        if( item->flags & ChunkForSendFlagMem){
-            delete item->data;
-        }
-        queue.pop();
-    }
+void SecureServer::cleanup(std::queue<ChunkForSend>& queue) {
+	while (!queue.empty()) {
+		auto item = &queue.front();
+		if (item->flags & ChunkForSendFlagMem) {
+			delete item->data;
+		}
+		queue.pop();
+	}
 }
 
 void SecureServer::cleanup(SSLConnection* conn) {
 	mbedtls_ssl_free(&conn->ssl);
 	conn->tpcb = 0;
 	conn->conn->init(0);
-    
-    cleanup(conn->writeQueue);
+
+	cleanup(conn->writeQueue);
 	cleanup(conn->sentWaitingAckQueue);
-    delete conn;
+	delete conn;
 }
 
 err_t SecureServer::tcp_recv_cb(void* arg, struct tcp_pcb* tpcb, struct pbuf* p,
@@ -396,10 +396,11 @@ err_t SecureServer::tcp_sent_cb(void* arg, struct tcp_pcb* tpcb, u16_t len)
 					// notify the plain text layer the data has been sent if the next check is non blocking
 					SHTTP_LOGI(__FUNCTION__, "calling sendCompleteCallback(%d)", (int)n.plainTextSize);
 					conn->conn->sendCompleteCallback(n.plainTextSize + conn->plainTextLengthPendingNotification);
-                    conn->plainTextLengthPendingNotification = 0;
-				}else {
-                    conn->plainTextLengthPendingNotification += n.plainTextSize;
-                }
+					conn->plainTextLengthPendingNotification = 0;
+				}
+				else {
+					conn->plainTextLengthPendingNotification += n.plainTextSize;
+				}
 
 				//if the data was copied to a new pointer free it now 
 				if (n.flags & ChunkForSendFlagMem) {
@@ -433,7 +434,7 @@ void SecureServer::tcp_err_cb(void* arg, err_t err)
 
 int SecureServer::sslSessionProcess(SSLConnection* conn) {
 
-	if(!mbedtls_ssl_is_handshake_over(&conn->ssl))
+	if (!mbedtls_ssl_is_handshake_over(&conn->ssl))
 	{
 		auto result = mbedtls_ssl_handshake(&conn->ssl);
 		if (result != 0) {
@@ -458,7 +459,7 @@ int SecureServer::sslSessionProcess(SSLConnection* conn) {
 			auto result = mbedtls_ssl_read(&conn->ssl, conn->recvBuf, sizeof(conn->recvBuf) - 1);
 			if (result > 0) {
 				conn->recvBuf[result] = 0;
-				SHTTP_LOGD(__FUNCTION__,"got [%s]", conn->recvBuf);
+				SHTTP_LOGD(__FUNCTION__, "got [%s]", conn->recvBuf);
 				conn->conn->dataReceived(conn->conn->dataReceivedArg, (uint8_t*)conn->recvBuf, result);
 			}
 			else if (!(result == MBEDTLS_ERR_SSL_WANT_READ || result == MBEDTLS_ERR_SSL_WANT_WRITE)) {
@@ -498,7 +499,7 @@ int SecureServer::loadCert(SimpleString* cert) {
 }
 
 mbedtls_x509_crt* SecureServer::getCertChain() {
-	if(!crtInitDone){
+	if (!crtInitDone) {
 		return 0;
 	}
 	return &srvcert;

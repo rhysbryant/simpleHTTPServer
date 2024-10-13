@@ -18,7 +18,7 @@
  *   along with SimpleHTTP.  If not, see <http://www.gnu.org/licenses/>.
  */
 #pragma once
-extern "C"{
+extern "C" {
 #include "lwip/tcp.h"
 
 #include "mbedtls/entropy.h"
@@ -37,81 +37,81 @@ extern "C"{
 #include "ServerConnection.h"
 #include "common.h"
 
-namespace SimpleHTTP{
-    class SecureServer{
-        private:
-            static const uint8_t ChunkForSendFlagSent = 1;
-            static const uint8_t ChunkForSendFlagMem = 2;
-            static const uint8_t ChunkForSendFlagClear = 4;
-            struct ChunkForSend {
-                const uint8_t* data;
-                const uint16_t size;
-                const uint16_t plainTextSize;
-                const uint8_t* plainTextPtr;
-                uint8_t flags;
+namespace SimpleHTTP {
+	class SecureServer {
+	private:
+		static const uint8_t ChunkForSendFlagSent = 1;
+		static const uint8_t ChunkForSendFlagMem = 2;
+		static const uint8_t ChunkForSendFlagClear = 4;
+		struct ChunkForSend {
+			const uint8_t* data;
+			const uint16_t size;
+			const uint16_t plainTextSize;
+			const uint8_t* plainTextPtr;
+			uint8_t flags;
 
-            };
+		};
 
-            struct SSLConnection {
-              pbuf bufTail;
-              std::queue<pbuf*>  readQueue;
-              std::queue<ChunkForSend>  writeQueue;//deque
-              std::queue<ChunkForSend> sentWaitingAckQueue;
-              int lastRemainingLength;
-              int plainTextLengthPendingNotification;
+		struct SSLConnection {
+			pbuf bufTail;
+			std::queue<pbuf*>  readQueue;
+			std::queue<ChunkForSend>  writeQueue;//deque
+			std::queue<ChunkForSend> sentWaitingAckQueue;
+			int lastRemainingLength;
+			int plainTextLengthPendingNotification;
 
-              uint16_t lastPlainTextSize;
-              uint8_t* lastPlainTextPtr;
+			uint16_t lastPlainTextSize;
+			uint8_t* lastPlainTextPtr;
 
-              int writeBufWaitingAck;
-              int writeBlockedWaitingOnAckForSize;
+			int writeBufWaitingAck;
+			int writeBlockedWaitingOnAckForSize;
 
-              bool clearWriteBlock;
-              uint8_t recvBuf[1024];
+			bool clearWriteBlock;
+			uint8_t recvBuf[1024];
 
-              tcp_pcb* tpcb;
-              mbedtls_ssl_context ssl;
-              ServerConnection* conn;
-            };
+			tcp_pcb* tpcb;
+			mbedtls_ssl_context ssl;
+			ServerConnection* conn;
+		};
 
-            
 
-			static struct tcp_pcb* tcpServer;
 
-            static err_t tcp_sent_cb(void* arg, struct tcp_pcb* tpcb, u16_t len);
-            static err_t tcp_recv_cb(void* arg, struct tcp_pcb* tpcb, struct pbuf* p, err_t err);
-            static err_t tcp_accept_cb(void* arg, struct tcp_pcb* newpcb, err_t err);
-            static void tcp_err_cb(void* arg, err_t err);
-            
-            static mbedtls_entropy_context entropy;
-            static mbedtls_ctr_drbg_context ctr_drbg;
-            static mbedtls_ssl_config conf;
-            static mbedtls_x509_crt srvcert;
-            static mbedtls_pk_context pkey;
-            static mbedtls_ssl_cache_context cache;
-            static bool crtInitDone;
+		static struct tcp_pcb* tcpServer;
 
-            static int mbedtls_tcp_recv(void *ctx, unsigned char *buf, size_t len);
-            static int mbedtls_tcp_send(void *ctx, const unsigned char *buf, size_t len);
-            //entry point for sending of unedncripted data
-            static int tcp_write_tls(tcp_pcb *pcb, const void *dataptr, u16_t len, u8_t apiflags);
+		static err_t tcp_sent_cb(void* arg, struct tcp_pcb* tpcb, u16_t len);
+		static err_t tcp_recv_cb(void* arg, struct tcp_pcb* tpcb, struct pbuf* p, err_t err);
+		static err_t tcp_accept_cb(void* arg, struct tcp_pcb* newpcb, err_t err);
+		static void tcp_err_cb(void* arg, err_t err);
 
-            static int sslSessionProcess(SSLConnection* conn);
-            static pbuf* getNextBufferForRead(SSLConnection* conn);
-            static err_t sendNextChunk(SSLConnection* conn);
-            static bool queueChunksForSend(SSLConnection* conn,uint8_t* data, int len);
+		static mbedtls_entropy_context entropy;
+		static mbedtls_ctr_drbg_context ctr_drbg;
+		static mbedtls_ssl_config conf;
+		static mbedtls_x509_crt srvcert;
+		static mbedtls_pk_context pkey;
+		static mbedtls_ssl_cache_context cache;
+		static bool crtInitDone;
 
-            static void cleanup(SSLConnection* conn);
-            static void cleanup(std::queue<ChunkForSend>& queue);
+		static int mbedtls_tcp_recv(void* ctx, unsigned char* buf, size_t len);
+		static int mbedtls_tcp_send(void* ctx, const unsigned char* buf, size_t len);
+		//entry point for sending of unedncripted data
+		static int tcp_write_tls(tcp_pcb* pcb, const void* dataptr, u16_t len, u8_t apiflags);
 
-            static const int maxSendSize = ServerConnection::maxSendSize + 29;
+		static int sslSessionProcess(SSLConnection* conn);
+		static pbuf* getNextBufferForRead(SSLConnection* conn);
+		static err_t sendNextChunk(SSLConnection* conn);
+		static bool queueChunksForSend(SSLConnection* conn, uint8_t* data, int len);
 
-        public:
-            static int loadPrivateKey(SimpleString* cert);
-            static int loadCert(SimpleString* cert);
-            static mbedtls_x509_crt* getCertChain();
-            static int TLSInit();
-            static void listen(int port);
+		static void cleanup(SSLConnection* conn);
+		static void cleanup(std::queue<ChunkForSend>& queue);
 
-    };
+		static const int maxSendSize = ServerConnection::maxSendSize + 29;
+
+	public:
+		static int loadPrivateKey(SimpleString* cert);
+		static int loadCert(SimpleString* cert);
+		static mbedtls_x509_crt* getCertChain();
+		static int TLSInit();
+		static void listen(int port);
+
+	};
 };
