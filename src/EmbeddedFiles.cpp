@@ -35,7 +35,7 @@ void EmbeddedFilesHandler::embeddedFilesHandler(Request* req, Response* resp) {
 	if (f->flags & 128)
 	{
 		auto accepts = req->headers["ACCEPT-ENCODING"];
-		if (!accepts.empty() && accepts.contains("gzip"))
+		if (!accepts.empty() && accepts.find("gzip") != string::npos)
 		{
 			resp->writeHeaderLine(SIMPLE_STR("Content-Encoding: gzip"));
 		}

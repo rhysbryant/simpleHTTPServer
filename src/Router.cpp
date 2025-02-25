@@ -57,12 +57,12 @@ void Router::process()
 
 				bool connectionKeepAlive = false;
 				auto connHeader = client->currentRequest.headers["CONNECTION"];
-				if (connHeader == "keep-alive")
+				if (connHeader == "keep-alive" || client->currentRequest.version == HTTPVersion::RTSP10 )
 				{
 					connectionKeepAlive = true;
 				}
 
-				Response resp(client, connectionKeepAlive);
+				Response resp(client, connectionKeepAlive,client->currentRequest.version);
 				auto path = client->currentRequest.path;
 
 				auto h = handlers[path];

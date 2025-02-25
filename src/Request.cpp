@@ -154,7 +154,7 @@ Request::Method Request::parseMethod(SimpleString strMethod) {
 	return UnknownMethod;
 }
 
-Request::HTTPVersion Request::parseHTTPVersion(SimpleString str) {
+HTTPVersion Request::parseHTTPVersion(SimpleString str) {
 	for (int i = 0; i < HTTPVersionsCount; i++) {
 		if (str.size == HTTPVersions[i].size && memcmp(str.value, HTTPVersions[i].value, str.size) == 0) {
 			return (HTTPVersion)i;
@@ -313,7 +313,6 @@ void Request::reset() {
 }
 
 const constexpr struct SimpleString Request::requestMethods[];
-const constexpr struct SimpleString Request::HTTPVersions[];
 const constexpr char Request::TransferEncodingHeaderName[];
 const constexpr char Request::ContentLengthHeaderName[];
 const constexpr bool Request::methodHasBody[];

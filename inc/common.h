@@ -18,6 +18,7 @@
  *   along with SimpleHTTP.  If not, see <http://www.gnu.org/licenses/>.
  */
 #pragma once
+#include "../../simpleHTTPServer.conf.h"
 #include <string>
 namespace SimpleHTTP{
     enum Result{
@@ -32,6 +33,26 @@ namespace SimpleHTTP{
         const char* value;
         const int size;
     };
+
+	enum HTTPVersion : int {
+		HTTP10 = 0,
+		HTTP11,
+#ifdef SIMPLE_HTTP_RTSP_SUPPORT
+		RTSP10,
+#endif
+		VersionUnknown,
+		Error
+	};
+
+	static const constexpr struct SimpleString HTTPVersions[] = {
+		SIMPLE_STR("HTTP/1.0"),
+		SIMPLE_STR("HTTP/1.1"),
+#ifdef SIMPLE_HTTP_RTSP_SUPPORT
+		SIMPLE_STR("RTSP/1.0")
+#endif
+	};
+
+	static const int HTTPVersionsCount = sizeof(HTTPVersions)/sizeof(HTTPVersions[0]);
 
 	struct HTTPHeader {
 		SimpleString name;

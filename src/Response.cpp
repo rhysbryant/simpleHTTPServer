@@ -22,7 +22,7 @@
 
 using namespace SimpleHTTP;
 
-Response::Response(ServerConnection* conn, bool connectionKeepAlive) {
+Response::Response(ServerConnection* conn, bool connectionKeepAlive,HTTPVersion requestVersion) {
 	responseHeaderBufferPos = responseBuffer;
 	responseBufferBodyStart = responseBuffer + responseBufferHeadersReservedSize;
 	responseBufferPos = responseBufferBodyStart;
@@ -32,6 +32,7 @@ Response::Response(ServerConnection* conn, bool connectionKeepAlive) {
 	chunkedEncoding = true;
 	connectionMode = connectionKeepAlive ? ConnectionKeepAlive : ConnectionClose;
 	client = conn;
+	responseVersion = requestVersion;
 }
 
 bool Response::ensureStatusWritten() {
@@ -153,8 +154,10 @@ bool Response::writeHeader(Response::Status status) {
 	statusWritten = true;
 
 	auto strStatus = statusStrings[status];
+	auto strVersion = HTTPVersions[responseVersion];
 
-	return appendHeaders((char*)VersionString.value, VersionString.size)
+	return appendHeaders((char*)strVersion.value, strVersion.size)
+		&& appendHeaders(" ",1)
 		&& writeHeaderLine(strStatus.value, strStatus.size);
 
 }

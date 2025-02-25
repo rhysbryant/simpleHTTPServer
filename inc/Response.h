@@ -73,6 +73,7 @@ namespace SimpleHTTP {
 		bool headersSent;
 		bool statusWritten;
 		bool chunkedEncoding;
+		HTTPVersion responseVersion;
 		ConnectionMode connectionMode;
 
 		ServerConnection* client;
@@ -99,7 +100,7 @@ namespace SimpleHTTP {
 
 	public:
 
-		Response(ServerConnection* conn, bool connectionKeepAlive);
+		Response(ServerConnection* conn, bool connectionKeepAlive,HTTPVersion requestVersion);
 
 		enum Status : int {
 			Ok = 0,
@@ -187,5 +188,9 @@ namespace SimpleHTTP {
 		inline void setConnectionMode(ConnectionMode connMode) { connectionMode=connMode; }
 
 		inline ConnectionMode getConnectionMode() { return connectionMode; }
+
+		inline bool getRemoteIPAddress(char *buf, int buflen){
+			return client->getRemoteIPAddress(buf,buflen);
+		}
 	};
 };

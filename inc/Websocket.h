@@ -50,7 +50,7 @@ namespace SimpleHTTP
 
 	private:
 		static const int requestBufferSize = 2048;
-#if(defined(_WIN32))
+#if SIMPLE_HTTP_RTOS_MODE == 0
 		int _bufferLock;
 		inline int xSemaphoreCreateMutex() { return 0; }
 #else
@@ -144,7 +144,14 @@ namespace SimpleHTTP
 		bool bufferLock();
 		void bufferUnLock();
 
-		Websocket(){resetBuffer();_bufferLock = xSemaphoreCreateMutex();unAssign(); }
+		Websocket(){
+			resetBuffer();
+#if SIMPLE_HTTP_RTOS_MODE
+			_bufferLock = xSemaphoreCreateMutex();
+#endif
+
+			unAssign();
+		}
 
 	};
 

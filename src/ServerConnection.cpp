@@ -47,6 +47,7 @@ void ServerConnection::init(struct tcp_pcb* client) {
 
 	this->currentRequest.reset();
 	this->client = client;
+
 }
 
 Result ServerConnection::parseRequest(void *arg, uint8_t *data, uint16_t len){

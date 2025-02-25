@@ -59,8 +59,8 @@ namespace SimpleHTTP {
 		int bodyLength;
 
 	public:
-		static const int requestMethodsCount = 7;
 		
+
 		enum Method : int {
 			GET = 0,
 			PUT,
@@ -69,23 +69,20 @@ namespace SimpleHTTP {
 			SEND,
 			DELETE,
 			OPTIONS,
+#ifdef SIMPLE_HTTP_RTSP_SUPPORT
+			RTSP_DESCRIBE,
+			RTSP_SETUP,
+			RTSP_PLAY,
+			RTSP_PAUSE,
+			RTSP_TEARDOWN,
+#endif
 			UnknownMethod
 		} method;
-
-
-
-		enum HTTPVersion : int {
-			HTTP10 = 0,
-			HTTP11,
-			VersionUnknown,
-			Error
-		} version;
-
-		static const int HTTPVersionsCount = 2;
 
 		static const int MaxHeaderNameLength = 64;
 		static const int MaxHeaderValueLength = 255;
 
+		HTTPVersion version;
 		map<string, string> headers;
 		string path;
 
@@ -120,8 +117,18 @@ namespace SimpleHTTP {
 		   SIMPLE_STR("POST"),
 		   SIMPLE_STR("SEND"),
 		   SIMPLE_STR("DELETE"),
-		   SIMPLE_STR("OPTIONS")
+		   SIMPLE_STR("OPTIONS"),
+#ifdef SIMPLE_HTTP_RTSP_SUPPORT
+		   SIMPLE_STR("DESCRIBE"),
+		   SIMPLE_STR("SETUP"),
+		   SIMPLE_STR("PLAY"),
+		   SIMPLE_STR("PAUSE"),
+		   SIMPLE_STR("TEARDOWN")
+#endif
+
 		};
+
+		static const int requestMethodsCount = sizeof(requestMethods) / sizeof(SimpleString);
 
 		static const constexpr bool methodHasBody[] = {
 			false,
@@ -130,13 +137,17 @@ namespace SimpleHTTP {
 			true,
 			true,
 			false,
+			false,
+#ifdef SIMPLE_HTTP_RTSP_SUPPORT
+			false,
+			false,
+			false,
+			false,
 			false
+#endif
 		};
 
-		static const constexpr struct SimpleString HTTPVersions[] = {
-			SIMPLE_STR("HTTP/1.0"),
-			SIMPLE_STR("HTTP/1.1")
-		};
+
 	protected:
 		/**
 		 * accepts GET,POST, SEND or OPTIONS strings and returns the enum value

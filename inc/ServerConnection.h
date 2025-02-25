@@ -176,6 +176,10 @@ namespace SimpleHTTP {
 			tcp_abort(client);
 		}
 
+		inline bool getRemoteIPAddress(char *buf, int buflen){
+			return ip4addr_ntoa_r(&client->remote_ip,buf,buflen)!=0;
+		}
+
 	};
 
 }

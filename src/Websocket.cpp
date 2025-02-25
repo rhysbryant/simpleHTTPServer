@@ -21,7 +21,7 @@
 #include "libsha1.h"
 extern "C" {
 #include "cencode.h"
-#if(!defined(_WIN32))
+#if SIMPLE_HTTP_RTOS_MODE
 #include "freertos/semphr.h"
 #endif
 }
