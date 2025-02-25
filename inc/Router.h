@@ -25,33 +25,33 @@
 #include "ServerConnection.h"
 #include <stdint.h>
 
-namespace SimpleHTTP{
-    typedef void (*RequestHandler) (Request* request,Response* response);
+namespace SimpleHTTP {
+	typedef void (*RequestHandler) (Request* request, Response* response);
 
-    //Request routing and connection management
-    class Router {
-        private:
-            static std::map<string,RequestHandler> handlers;
-            static RequestHandler defaultHandler;
+	//Request routing and connection management
+	class Router {
+	private:
+		static std::map<string, RequestHandler> handlers;
+		static RequestHandler defaultHandler;
 
-            static void internalDefaultHandler(Request* request,Response* response);
+		static void internalDefaultHandler(Request* request, Response* response);
 
-            static const uint32_t KeepaliveTimeout = 60 * 1000;
-            static const int maxClientConnections = 10;
-			static ServerConnection clients[maxClientConnections];
-        public:
-            /**
-             * add URL path to handler (callback function) mapping
-            */
-            static void addHandler(string path,RequestHandler handler);
-            /**
-             * the handler to use when the path is not found in the handles map
-             * pass null to restore the default
-             */
-            static void setDefaultHandler(RequestHandler handler);
+		static const uint32_t KeepaliveTimeout = 60 * 1000;
+		static const int maxClientConnections = 10;
+		static ServerConnection clients[maxClientConnections];
+	public:
+		/**
+		 * add URL path to handler (callback function) mapping
+		*/
+		static void addHandler(string path, RequestHandler handler);
+		/**
+		 * the handler to use when the path is not found in the handles map
+		 * pass null to restore the default
+		 */
+		static void setDefaultHandler(RequestHandler handler);
 
-            static void process();
+		static void process();
 
-            static ServerConnection* getFreeConnection();
-    };
+		static ServerConnection* getFreeConnection();
+	};
 };

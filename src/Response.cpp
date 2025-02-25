@@ -128,8 +128,8 @@ int Response::write(const char* data, int length) {
 	return 0;
 }
 
-int Response::write(const char* data){
-	return write(data,strlen(data));
+int Response::write(const char* data) {
+	return write(data, strlen(data));
 }
 
 int Response::writeDirect(const char* data, int length) {
@@ -138,7 +138,7 @@ int Response::writeDirect(const char* data, int length) {
 		return result;
 	}
 
-	if (client->writeData((uint8_t*)data, length, 0)) {
+	if (client->writeData((uint8_t*)data, length, ServerConnection::WriteFlagZeroCopy)) {
 		responseSizeTotal += length;
 		return OK;
 	}
@@ -243,6 +243,7 @@ Result Response::flush(bool finalise) {
 	}
 
 	//preend the chunk size to the payload and trailing new line
+	auto beforeChunkAdd = responseBufferBodyStart;
 	if (chunkedEncoding) {
 
 		char tmp[ChunkedTransferSizeHeaderSize] = "";
@@ -252,6 +253,7 @@ Result Response::flush(bool finalise) {
 
 		if (!(appendBodyPrefix(tmp, lengthSize)
 			&& appendBody((char*)EOL, sizeof(EOL)))) {
+			responseBufferBodyStart = beforeChunkAdd;
 			return ERROR;
 		}
 
@@ -264,15 +266,18 @@ Result Response::flush(bool finalise) {
 
 
 
-	int result = networkWrite(responseBufferBodyStart, responseBufferPos - responseBufferBodyStart);
+	auto result = networkWrite(responseBufferBodyStart, responseBufferPos - responseBufferBodyStart);
 	if (result == OK) {
 		//no longer need the reserved space for the headers once the headers have been sent
 		responseBufferBodyStart = responseBuffer + ChunkedTransferSizeHeaderSize;
 		responseBufferPos = responseBufferBodyStart;
 		responseHeaderBufferPos = responseBuffer;
 	}
-	
-	return OK;
+	else if (chunkedEncoding) {
+		responseBufferBodyStart = beforeChunkAdd;
+	}
+
+	return result;
 }
 
 ServerConnection* Response::hijackConnection() {
@@ -281,7 +286,7 @@ ServerConnection* Response::hijackConnection() {
 }
 
 Result Response::networkWrite(char* data, int length) {
-	if (client->write((uint8_t*)data, length)) {
+	if (client->writeData((uint8_t*)data, length, 0)) {
 		responseSizeTotal += length;
 		return OK;
 	}

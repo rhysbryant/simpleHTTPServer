@@ -44,19 +44,20 @@ namespace SimpleHTTP {
 		static constexpr const char TransferEncodingHeaderName[] = "TRANSFER-ENCODING";
 		static constexpr const char ContentLengthHeaderName[] = "CONTENT-LENGTH";
 
-		char requestBuffer[requestBufferSize];
-		char* requestBufferPos;
-		char* requestBufferEnd;
+		vector<char> requestBuffer;
+		int bufferReadPos;
 		int lastBodyOutputBytesWritten;
 
 		Result appendToBuffer(char* data, int size);
-		
+
 		inline void resetBuffer() {
-			requestBufferPos = requestBuffer;
+			requestBuffer.clear();
+			bufferReadPos = 0;
 		}
 
 		bool bodyEncodingChunked;
 		int bodyLength;
+		bool bodyReadInProgress;
 
 	public:
 		
@@ -94,11 +95,22 @@ namespace SimpleHTTP {
 		void reset();
 
 		inline bool receivedAllHeaders() { return parsingStage == WaitingBody || parsingStage == WaitingComplete; };
+		/*
+		* returns true if the request is ready for process or more body data has been received since
+		* last time this method was called
+		*/
+		inline bool getAndClearForProcessing() {
+			if (parsingStage == WaitingBody && hasMoreBodyDataSinceLastCheck) {
+				return true;
+				hasMoreBodyDataSinceLastCheck = true;
+			}
+			return parsingStage == WaitingComplete;
+		}
 		/**
 		* read out the internal body buffer
 		* dstBufferSize in/out pass the buffer size
 		* on return it's set to the number of bytes written to the buffer
-		* 
+		*
 		**/
 		Result readBody(char* dstBuffer, int* dstBufferSize);
 		/*
@@ -107,7 +119,8 @@ namespace SimpleHTTP {
 		*/
 		Result unReadBody();
 
-		inline int getBodyLength() { return bodyLength;  }
+		inline int getBodyLength() { return bodyLength; }
+		inline bool isBodyReadInProgress() { return bodyReadInProgress; }
 
 	private:
 		static const constexpr struct SimpleString requestMethods[] = {
@@ -153,6 +166,8 @@ namespace SimpleHTTP {
 		 * accepts GET,POST, SEND or OPTIONS strings and returns the enum value
 		**/
 		Method parseMethod(SimpleString str);
+
+		bool hasMoreBodyDataSinceLastCheck;
 
 		HTTPVersion parseHTTPVersion(SimpleString str);
 		/**

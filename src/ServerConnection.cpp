@@ -25,14 +25,14 @@ bool ServerConnection::isConnected() {
 	return client != 0;
 }
 
-ServerConnection::ServerConnection(){ 
+ServerConnection::ServerConnection() {
 	init(0);
 }
 
 void ServerConnection::init(struct tcp_pcb* client) {
 
 	hijacted = false;
-	closeOnceSent =  0;
+	closeOnceSent = 0;
 	waitingForSendCompleteSize = 0;
 
 	lastRequestTime = 0;
@@ -41,24 +41,31 @@ void ServerConnection::init(struct tcp_pcb* client) {
 	dataReceivedArg = this;
 
 	sendQueue = {};
-	
+
 	sessionArg = 0;
 	sessionArgFreeHandler = 0;
+
+	writeDataInternal = writePlainText;
 
 	this->currentRequest.reset();
 	this->client = client;
 
 }
 
-Result ServerConnection::parseRequest(void *arg, uint8_t *data, uint16_t len){
-	if( data == 0 ){
+void ServerConnection::init(struct tcp_pcb* client, WriteData callback) {
+	init(client);
+	writeDataInternal = callback;
+}
+
+Result ServerConnection::parseRequest(void* arg, uint8_t* data, uint16_t len) {
+	if (data == 0) {
 		//object is being reset for reuse
 		return OK;
 	}
 
 	auto conn = static_cast<ServerConnection*>(arg);
-	auto result =  conn->currentRequest.parse(( char*)data, len);
-	if(result == ERROR){
+	auto result = conn->currentRequest.parse((char*)data, len);
+	if (result == ERROR) {
 		conn->close();
 		return ERROR;
 	}
@@ -66,24 +73,43 @@ Result ServerConnection::parseRequest(void *arg, uint8_t *data, uint16_t len){
 	return OK;
 }
 
-bool ServerConnection::writeData(uint8_t* data, int len, uint8_t apiFlags) {
-	if (sendQueue.empty()) {
+bool ServerConnection::writeData(uint8_t* data, int len, int writeFlags) {
+	if(client == 0){
+		return false;
+	}
+	int apiFlags = (writeFlags & WriteFlagZeroCopy) ? 0 : TCP_WRITE_FLAG_COPY;
+	bool locked = false;
+	if ((writeFlags & WriteFlagNoLock) == 0) {
+		LOCK_TCPIP_CORE();
+		locked = true;
+	}
+
+	if (sendQueue.empty() || apiFlags != 0) {
 		//try to directly send the first chunk
 		int size = len > maxSendSize && apiFlags == 0 ? maxSendSize : len;
-		LOCK_TCPIP_CORE();
-		err_t err = tcp_write(client, data, size, apiFlags);
-		UNLOCK_TCPIP_CORE();
-		if (err != ERR_OK) {
-			goto queueChunks;
+		int dataLengthWritten = 0;
+
+
+		dataLengthWritten = writeDataInternal(client, data, size, apiFlags);
+		if (dataLengthWritten >= 0 && (writeFlags & WriteFlagNoFlush) == 0) {
+			//tcp_output(client);
 		}
-		tcp_output(client);
+			
+
+		if (dataLengthWritten < 0) {
+			if(locked){
+				UNLOCK_TCPIP_CORE();
+			}
+			return false;
+		}
 
 		len -= size;
 		data += size;
-		waitingForSendCompleteSize += size;
+		waitingForSendCompleteSize += dataLengthWritten;
 	}
-queueChunks:
-	if ((apiFlags == 0 && len >0 )) {
+//queueChunks:
+
+	if ((apiFlags == 0 && len > 0)) {
 		//put any remaining data on the queue
 		int toSend = len;
 		uint8_t* dataToSend = data;
@@ -94,28 +120,35 @@ queueChunks:
 				dataToSend,
 				size
 			};
-
-			sendQueue.push(c);
 			
+			sendQueue.push(c);
+
 			dataToSend += size;
 			toSend -= size;
-			
+
 		}
 	}
 
+	if(locked){
+		UNLOCK_TCPIP_CORE();
+	}
+
 	return true;
+
+
 }
 
 bool ServerConnection::sendNextFromQueue() {
 
 	ChunkForSend c = sendQueue.front();
-	auto wErr = tcp_write(client,(uint8_t*) c.data, c.size, 0);
-	if ( wErr == ERR_OK) {
+	int dataWritten = writeDataInternal(client, (uint8_t*)c.data, c.size, 0);
+	if (dataWritten >= 0) {
 		sendQueue.pop();
-		waitingForSendCompleteSize += c.size;
+		waitingForSendCompleteSize += dataWritten;
 		auto err = tcp_output(client);
 		return true;
-	}else{
+	}
+	else {
 		return false;
 	}
 }
@@ -126,7 +159,7 @@ Result ServerConnection::sendCompleteCallback(int length) {
 		waitingForSendCompleteSize -= length;
 		if (hasAvailableSendBuffer()) {
 			if (!sendQueue.empty()) {
-				if(!sendNextFromQueue()){
+				if (!sendNextFromQueue()) {
 					return ERROR;
 				}
 			}

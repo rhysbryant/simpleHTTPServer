@@ -52,7 +52,7 @@ void Router::process()
 		if (clients[i].isConnected())
 		{
 			auto client = &clients[i];
-			if (client->currentRequest.receivedAllHeaders())
+			if (client->currentRequest.getAndClearForProcessing())
 			{
 
 				bool connectionKeepAlive = false;
@@ -75,13 +75,18 @@ void Router::process()
 					h(&client->currentRequest, &resp);
 				}
 
-				resp.finalize();
-				client->flushData();
-				client->currentRequest.reset();
-				client->lastRequestTime = os_getUnixTime();
-				if (resp.getConnectionMode() == Response::ConnectionClose)
-				{
-					client->closeOnceSent = resp.getResponseSizeSent();
+				if( ! client->currentRequest.isBodyReadInProgress() ){
+					resp.finalize();
+                
+					client->currentRequest.reset();
+					client->lastRequestTime = os_getUnixTime();
+					if (resp.getConnectionMode() == Response::ConnectionClose)
+					{
+						client->closeOnceSent = resp.getResponseSizeSent();
+					}
+				}else{
+					//TODO allow data to be written while a body receive is in progress
+					//resp.flush();
 				}
 			}
 			else
