@@ -40,7 +40,9 @@ void ServerConnection::init(struct tcp_pcb* client) {
 	dataReceived = parseRequest;
 	dataReceivedArg = this;
 
-	sendQueue = {};
+	while(!sendQueue.empty()){
+		sendQueue.pop();
+	}
 
 	sessionArg = 0;
 	sessionArgFreeHandler = 0;

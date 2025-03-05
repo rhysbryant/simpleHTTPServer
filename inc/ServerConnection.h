@@ -27,7 +27,7 @@
 
 #endif
 #include <stdint.h>
-#include <queue>
+#include "queue.h"
 #if !defined(LWIP_TCPIP_CORE_LOCKING) || LWIP_TCPIP_CORE_LOCKING == 0
 #define LOCK_TCPIP_CORE()
 #define UNLOCK_TCPIP_CORE()
@@ -54,7 +54,7 @@ namespace SimpleHTTP {
 			const uint8_t* data;
 			const uint16_t size;
 		};
-		std::queue<ChunkForSend> sendQueue;
+		LinkedListQueue<ChunkForSend> sendQueue;
 
 		//current chuck size in flight
 		int waitingForSendCompleteSize;
