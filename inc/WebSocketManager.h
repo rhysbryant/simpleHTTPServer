@@ -35,6 +35,8 @@ namespace SimpleHTTP
         static Websocket connectionBufferLock[poolSize];
         
         static int nextFreeClientIndex();
+        static int lastConnectionsInUse;
+        static int getConnectionsInUseCount();
         static int acceptKey(string clientKey, char *outputBuffer);
         static Result dataReceivedHandler(void *arg, uint8_t *data, uint16_t len);
         static FrameReceivedHandler frameReceivedHandler;

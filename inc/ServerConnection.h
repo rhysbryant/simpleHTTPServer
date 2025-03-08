@@ -19,6 +19,7 @@
  */
 #pragma once
 #include "Request.h"
+#include "BasicLWIPTransport.h"
 
 #if defined(_WIN32) || defined(__linux__)
 #include "mock-tcp.h"
@@ -27,7 +28,7 @@
 
 #endif
 #include <stdint.h>
-#include <queue>
+#include "queue.h"
 #if !defined(LWIP_TCPIP_CORE_LOCKING) || LWIP_TCPIP_CORE_LOCKING == 0
 #define LOCK_TCPIP_CORE()
 #define UNLOCK_TCPIP_CORE()
@@ -35,6 +36,7 @@
 #include "lwip/sys.h"
 #include "lwip/tcpip.h"
 #endif
+using SimpleHTTP::Internal::Transport;
 namespace SimpleHTTP {
 	//HTTP client connection
 	class ServerConnection {
@@ -44,7 +46,7 @@ namespace SimpleHTTP {
 			Idle
 		};
 
-		struct tcp_pcb* client;
+		//struct tcp_pcb* client;
 		static Result parseRequest(void* arg, uint8_t* data, uint16_t len);
 
 		// allow writeData calls with a size larger then the IP stacks sent buffer
@@ -54,21 +56,15 @@ namespace SimpleHTTP {
 			const uint8_t* data;
 			const uint16_t size;
 		};
-		std::queue<ChunkForSend> sendQueue;
+		LinkedListQueue<ChunkForSend> sendQueue;
 
 		//current chuck size in flight
 		int waitingForSendCompleteSize;
 
 		bool sendNextFromQueue();
 
-		static inline int writePlainText(tcp_pcb* pcb, const void* dataptr, u16_t len, uint8_t apiflags) {
-
-			if (tcp_write(pcb,(uint8_t*) dataptr, len, apiflags) != ERR_OK) {
-				return ErrWriteDataFailed;
-			}
-			tcp_output(pcb);
-			return len;
-		}
+		SimpleHTTP::Internal::BasicLWIPTransport defaultTransport;
+		Transport* transport;
 
 	public:
 		static const int maxSendSize = 4096;
@@ -83,6 +79,13 @@ namespace SimpleHTTP {
 		void* sessionArg;
 		SessionArgFree sessionArgFreeHandler;
 
+		void runFreeSessionHandler() {
+			if (sessionArgFreeHandler != 0) {
+				sessionArgFreeHandler(sessionArg);
+				sessionArg = 0;
+			}
+		}
+
 		bool hijacted;
 		int closeOnceSent;
 
@@ -96,15 +99,8 @@ namespace SimpleHTTP {
 
 		ServerConnection();
 
-		static const int ErrWriteDataFailed = -1;
-
-		typedef int (*WriteData) (tcp_pcb *pcb, const void *dataptr, u16_t len, uint8_t apiflags);
-		private:
-			WriteData writeDataInternal;
-		public:
-
 		void init(struct tcp_pcb* client);
-		void init(struct tcp_pcb* client, WriteData callback);
+		void init(struct tcp_pcb* client, Transport* transport);
 		/**
 		 * internal method only
 		 * in this context result means
@@ -115,78 +111,28 @@ namespace SimpleHTTP {
 		Result sendCompleteCallback(int length);
 
 		/*
-		 * writes data to the client connection
-		 *
-		 */
-		virtual inline bool write_old(uint8_t* data, uint16_t len) {
-			LOCK_TCPIP_CORE();
-			if( client == 0 ){
-				UNLOCK_TCPIP_CORE();
-				return false;
-			}
-			auto result = tcp_write(client, data, len, TCP_WRITE_FLAG_COPY) == ERR_OK;
-			if (result) {
-				waitingForSendCompleteSize += len;
-			}
-			UNLOCK_TCPIP_CORE();
-			return result;
-		}
+		for backwards compatibility alias the flags here
+		*/
 
-		static const int WriteFlagNoLock = 1;
+		static const int WriteFlagNoLock = Transport::WriteFlagNoLock;
 		//don't copy the data
-		static const int WriteFlagZeroCopy = 2;
-		static const int WriteFlagNoFlush = 4;
+		static const int WriteFlagZeroCopy = Transport::WriteFlagZeroCopy;
 
-		
+		static const int WriteFlagNoFlush = Transport::WriteFlagNoFlush;
+
 		bool writeData(const uint8_t* data, int len, int writeFlags);
 
-		/*
-		 * writes data to the client connection and flushes it
-		 *TCP_WRITE_FLAG_COPY
-		 */
-		inline bool writeDataAndFlush_old(uint8_t* data, uint16_t len) {
-			LOCK_TCPIP_CORE();
-			if( client == 0 ){
-				UNLOCK_TCPIP_CORE();
-				return false;
-			}
-			auto result = (tcp_write(client, data, len, 0) == ERR_OK
-				&& tcp_output(client) == ERR_OK);
-			if (result) {
-				waitingForSendCompleteSize += len;
-			}
-			UNLOCK_TCPIP_CORE();
-			return result;
-		}
-
-		inline bool flushData_old() {
-			LOCK_TCPIP_CORE();
-			if( client == 0 ){
-				UNLOCK_TCPIP_CORE();
-				return false;
-			}
-			err_t err = tcp_output(client);
-			UNLOCK_TCPIP_CORE();
-			if (err != ERR_OK) {
-				return false;
-			}
-			else {
-				return true;
-			}
-		}
-
 		inline bool  hasAvailableSendBuffer() {
-			return waitingForSendCompleteSize <= maxSendSize;
+			return transport && transport->getAvailableSendBuffer() > 0; // waitingForSendCompleteSize <= maxSendSize;
 		}
 
 		inline bool closeWithOutLocking() {
-			tcp_close(client);
-			client = 0;
-			if (sessionArg != 0 && sessionArgFreeHandler != 0) {
-				sessionArgFreeHandler(sessionArg);
-				sessionArg = 0;
+			if(transport){
+				transport->shutdown();
+				transport = 0;
 			}
-			dataReceived(dataReceivedArg,0,0);
+			runFreeSessionHandler();
+			dataReceived(dataReceivedArg, 0, 0);
 			return false;
 		}
 
@@ -196,13 +142,13 @@ namespace SimpleHTTP {
 			UNLOCK_TCPIP_CORE();
 			return false;
 		}
-
+		/*
 		inline void abort() {
 			tcp_abort(client);
-		}
+		}*/
 
 		inline bool getRemoteIPAddress(char *buf, int buflen){
-			return ip4addr_ntoa_r(&client->remote_ip, buf, buflen) != 0;
+			return transport && transport->getRemoteIPAddress(buf,buflen);
 		}
 
 	};

@@ -18,6 +18,7 @@
  *   along with SimpleHTTP.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "Router.h"
+#include "log.h"
 using namespace SimpleHTTP;
 
 void Router::addHandler(string path, RequestHandler handler)
@@ -47,6 +48,11 @@ void Router::setDefaultHandler(RequestHandler handler)
 
 void Router::process()
 {
+	auto connCountInUse = getConnectionsInUseCount();
+	if( lastConnectionsInUse != connCountInUse){
+		SHTTP_LOGI(__FUNCTION__,"%d connections in use",connCountInUse);
+		lastConnectionsInUse = connCountInUse;
+	}
 	for (int i = 0; i < maxClientConnections; i++)
 	{
 		if (clients[i].isConnected())
@@ -93,6 +99,7 @@ void Router::process()
 			{
 				if (!client->hijacted && client->lastRequestTime != 0 && os_getUnixTime() - client->lastRequestTime > KeepaliveTimeout)
 				{
+					SHTTP_LOGI(__FUNCTION__,"closing http connection");
 					client->close();
 				}
 			}
@@ -111,6 +118,20 @@ ServerConnection* Router::getFreeConnection() {
     return nullptr;
 }
 
+int Router::getConnectionsInUseCount() {
+	int count =0;
+	for (int i = 0; i < maxClientConnections; i++)
+	{
+		if (clients[i].isConnected())
+		{
+            count++;
+        }
+    }
+	return count;
+}
+
 ServerConnection Router::clients[];
 std::map<string, RequestHandler> Router::handlers;
 RequestHandler Router::defaultHandler = Router::internalDefaultHandler;
+int Router::lastConnectionsInUse = 0;
+

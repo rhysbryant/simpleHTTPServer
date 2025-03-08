@@ -31,7 +31,7 @@ using namespace SimpleHTTP;
 void WebsocketManager::upgradeHandler(Request* req, Response* resp)
 {
 	auto connHeader = req->headers["CONNECTION"];
-	if ( connHeader.find("Upgrade") == -1) {
+	if (connHeader.find("Upgrade") == -1) {
 		resp->writeHeader(Response::BadRequest);
 		return;
 	}
@@ -43,7 +43,7 @@ void WebsocketManager::upgradeHandler(Request* req, Response* resp)
 	}
 
 	int wsIndex = nextFreeClientIndex();
-	if( wsIndex == -1){
+	if (wsIndex == -1) {
 		resp->writeHeader(Response::InternalServerError);
 		return;
 	}
@@ -56,18 +56,18 @@ void WebsocketManager::upgradeHandler(Request* req, Response* resp)
 	int len = acceptKey(keyHeader, buffer);
 	buffer[len] = 0;
 
-	resp->writeHeaderLine("Sec-WebSocket-Accept",buffer);
+	resp->writeHeaderLine("Sec-WebSocket-Accept", buffer);
 	resp->writeHeaderLine(SIMPLE_STR("Upgrade: websocket"));
 	resp->setConnectionMode(Response::ConnectionUpgrade);
 
 	auto client = resp->hijackConnection();
 	//setup the mapping from ServerConnection to the WebSocket and back
-	
+
 	connections[wsIndex].assign(client);
-    client->dataReceivedArg = &connections[wsIndex];
+	client->dataReceivedArg = &connections[wsIndex];
 	client->dataReceived = dataReceivedHandler;
-	connections[wsIndex].lastPingSent =  os_getUnixTime();
-	
+	connections[wsIndex].lastPingSent = os_getUnixTime();
+
 }
 
 int WebsocketManager::acceptKey(string clientKey, char* outputBuffer)
@@ -90,23 +90,23 @@ int WebsocketManager::acceptKey(string clientKey, char* outputBuffer)
 	return length - 1;//trailing new line
 }
 
-Result WebsocketManager::dataReceivedHandler(void* arg, uint8_t* data, uint16_t len){
-	SHTTP_LOGI(__FUNCTION__,"got dataReceivedHandler: %d bytes",len);
-    auto ws = static_cast<Websocket*>(arg);
+Result WebsocketManager::dataReceivedHandler(void* arg, uint8_t* data, uint16_t len) {
+	SHTTP_LOGI(__FUNCTION__, "got dataReceivedHandler: %d bytes", len);
+	auto ws = static_cast<Websocket*>(arg);
 
-	if( data == 0 && len == 0){
+	if (data == 0 && len == 0) {
 		ws->unAssign();
 		return OK;
 	}
 
-    if (!ws->bufferLock())
-    {
-		SHTTP_LOGE(__FUNCTION__,"buffer lock failed");
-        return ERROR;
-    }
-    
-	ws->dataReceivedHandler(data,len);
-    ws->bufferUnLock();
+	if (!ws->bufferLock())
+	{
+		SHTTP_LOGE(__FUNCTION__, "buffer lock failed");
+		return ERROR;
+	}
+
+	ws->dataReceivedHandler(data, len);
+	ws->bufferUnLock();
 
 	return OK;
 }
@@ -119,20 +119,36 @@ void WebsocketManager::writeFrameToAll(Websocket::FrameType frameType, const Web
 	}
 }
 
-int WebsocketManager::nextFreeClientIndex(){
-	for(int i=0;i<poolSize;i++){
-		if( ! connections[i].isInUse()){
+int WebsocketManager::nextFreeClientIndex() {
+	for (int i = 0; i < poolSize; i++) {
+		if (!connections[i].isInUse()) {
 			return i;
 		}
 	}
 	return -1;
 }
 
-void WebsocketManager::process(){
-	for(int i=0;i< poolSize;i++){
-		if( connections[i].isInUse() ){
+int WebsocketManager::getConnectionsInUseCount() {
+	int count = 0;
+	for (int i = 0; i < poolSize; i++) {
+		if (connections[i].isInUse()) {
+			count++;
+		}
+	}
+	return count;
+}
+
+void WebsocketManager::process() {
+	auto connCountInUse = getConnectionsInUseCount();
+	if (lastConnectionsInUse != connCountInUse) {
+		SHTTP_LOGI(__FUNCTION__, "ws %d connections in use", connCountInUse);
+		lastConnectionsInUse = connCountInUse;
+	}
+
+	for (int i = 0; i < poolSize; i++) {
+		if (connections[i].isInUse()) {
 			auto ws = &connections[i];
-			if (!ws->bufferLock()){
+			if (!ws->bufferLock()) {
 				return;
 			}
 			uint8_t buffer[1024];
@@ -142,45 +158,49 @@ void WebsocketManager::process(){
 			auto gotMessage = ws->nextFrame(&f) == OK;
 
 			ws->bufferUnLock();
-            
-			if ( gotMessage ){
+
+			if (gotMessage) {
 
 
-				frameReceivedHandler(&connections[i],&f);
+				frameReceivedHandler(&connections[i], &f);
 				//frames that require echoing back the payload
-				if( f.frameType == Websocket::FrameTypeConnectionClose ){
-					if( !ws->isCloseRequestedByServer() ){
+				if (f.frameType == Websocket::FrameTypeConnectionClose) {
+					if (!ws->isCloseRequestedByServer()) {
 						Websocket::Payload closePayload{ (uint8_t*)f.payload,f.payloadLength,false,nullptr };
 						ws->writeFrame(f.frameType, &closePayload);
 					}
-				}else if( f.frameType == Websocket::FrameTypePing ){
+				}
+				else if (f.frameType == Websocket::FrameTypePing) {
 					Websocket::Payload pongPayload{ (uint8_t*)f.payload,f.payloadLength,false,nullptr };
 					ws->writeFrame(Websocket::FrameTypePong, &pongPayload);
-				}else if(f.frameType == Websocket::FrameTypePong){
+				}
+				else if (f.frameType == Websocket::FrameTypePong) {
 					ws->lastPongReceived = os_getUnixTime();
 				}
 
-			}else if( false || os_getUnixTime() - ws->lastPingSent > 15000 ){
-
-				if( ws->lastPongReceived != 0 && os_getUnixTime() -  ws->lastPongReceived > 60000 ){
-					ws->getConnection()->closeWithOutLocking();
+			}
+			else if (false || os_getUnixTime() - ws->lastPingSent > 15000) {
+				SHTTP_LOGD(__FUNCTION__, "ws check");
+				if ((ws->lastPongReceived != 0 && os_getUnixTime() - ws->lastPongReceived > 60000) || (ws->lastPongReceived == 0 && os_getUnixTime() - ws->getConnection()->lastRequestTime > 60000)) {
+					SHTTP_LOGE(__FUNCTION__, "ws close no pong");
+					ws->getConnection()->close();
 					return;
 				}
-
-				if( ws->writeFrame(Websocket::FrameTypePing,nullptr) == ERROR ) {
-					SHTTP_LOGE(__FUNCTION__,"closing due to ping error");
+				SHTTP_LOGD(__FUNCTION__, "pinging connect %d", i);
+				if (ws->writeFrame(Websocket::FrameTypePing, nullptr) == ERROR) {
+					SHTTP_LOGE(__FUNCTION__, "closing due to ping error");
 					ws->getConnection()->close();
 				}
 				ws->lastPingSent = os_getUnixTime();
-			}else if( ws->lastPongReceived != 0 &&  os_getUnixTime() - ws->lastPingSent > 30000 && !ws->isCloseRequestedByServer() ){
-				SHTTP_LOGE(__FUNCTION__,"pong timeout %d %d",(int)ws->lastPingSent ,(int) ws->lastPongReceived );
+			}
+			else if (ws->lastPongReceived != 0 && os_getUnixTime() - ws->lastPingSent > 30000 && !ws->isCloseRequestedByServer()) {
+				SHTTP_LOGE(__FUNCTION__, "pong timeout %d %d", (int)ws->lastPingSent, (int)ws->lastPongReceived);
 				ws->sendCloseFrame(66);
 			}
-
-			
 		}
 	}
 }
 
 Websocket WebsocketManager::connections[poolSize];
-WebsocketManager::FrameReceivedHandler WebsocketManager::frameReceivedHandler=0;
+WebsocketManager::FrameReceivedHandler WebsocketManager::frameReceivedHandler = 0;
+int WebsocketManager::lastConnectionsInUse = 0;
