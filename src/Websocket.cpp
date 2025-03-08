@@ -41,23 +41,30 @@ void Websocket::dataReceivedHandler(uint8_t *data, int dataSize)
 	}
 }
 
-Result Websocket::writeFrame(FrameType frameType, char *headerExta, const uint16_t headerExtraSize, char *payload, int size)
-{
-	return writeFrame(conn, frameType, headerExta, headerExtraSize, payload, size);
+Result Websocket::writeFrame(FrameType frameType,const Payload* payload) {
+	return writeFrame(conn, frameType, payload);
 }
 
-Result Websocket::writeFrame(ServerConnection *conn, FrameType frameType, char *headerExta, const uint16_t headerExtraSize, char *payload, int size)
+Result Websocket::writeFrame(ServerConnection *conn, FrameType frameType,const Payload* payload)
 {
 	uint8_t header[5] = "";
 	uint8_t *headerPtr = header + 1;
 	header[0] = FlagFIN | frameType;
-	uint16_t totalPayloadSize = size + headerExtraSize;
+	uint16_t totalPayloadSize = 0;
+
+	auto tmp = payload;
+
+	while (tmp != nullptr) {
+		totalPayloadSize += tmp->size;
+		tmp = (Payload*)tmp->next;
+	}
+
 
 	if (totalPayloadSize <= 125)
 	{
 		*(headerPtr++) = (totalPayloadSize & 0xFF);
 	}
-	else if (size < 65536)
+	else if (totalPayloadSize < 65536)
 	{
 		*(headerPtr++) = 126;
 		*(headerPtr++) = (totalPayloadSize >> 8);
@@ -69,12 +76,21 @@ Result Websocket::writeFrame(ServerConnection *conn, FrameType frameType, char *
 		return ERROR;
 	}
 
+	Payload top{
+		header,
+		headerPtr - header,
+		false,
+		payload
+	};
+
 	LOCK_TCPIP_CORE();
-	if (!conn->writeData(header, headerPtr - header, ServerConnection::WriteFlagNoFlush | ServerConnection::WriteFlagNoLock) ||
-		!conn->writeData((uint8_t *)headerExta, headerExtraSize, ServerConnection::WriteFlagNoFlush | ServerConnection::WriteFlagNoLock))
-	{ //|| !conn->writeData((uint8_t*)payload,size,0)
-		UNLOCK_TCPIP_CORE();
-		return ERROR;
+	auto current = &top;
+	while ( current != nullptr) {
+		if (!conn->writeData(current->data, current->size, current->byRef ? ServerConnection::WriteFlagZeroCopy : 0)) {
+			UNLOCK_TCPIP_CORE();
+			return ERROR;
+		}
+		current = (Payload*)current->next;
 	}
 	UNLOCK_TCPIP_CORE();
 	return OK;
@@ -206,7 +222,13 @@ Result Websocket::nextFrame(Frame *frame)
 SimpleHTTP::Result Websocket::sendCloseFrame(uint16_t code)
 {
 	closeRequestedByServer = true;
-	return writeFrame(FrameTypeConnectionClose, (char *)&code, 2, "", 0);
+	Payload p{
+		(const uint8_t*)& code,
+		2,
+		false,
+		nullptr,
+	};
+	return writeFrame(FrameTypeConnectionClose, &p);
 }
 
 bool Websocket::bufferLock()

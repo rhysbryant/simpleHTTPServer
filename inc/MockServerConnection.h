@@ -23,12 +23,25 @@
 namespace SimpleHTTPTest {
 	//Dummy Connection for Testing
 	class MockServerConnection: public SimpleHTTP::ServerConnection {
+
 	public:
 		std::string buffer;
-		bool writeData(uint8_t* data, int len, uint8_t apiFlags) {
-			buffer.append((char*)data, len);
-			return true;
+	private:
+		tcp_pcb mockSocket{ & buffer };
+	public:
+		
+		static inline int writeDataMock(tcp_pcb* pcb, const void* dataptr, u16_t len, uint8_t apiflags) {
+			auto buffer = (std::string*)pcb->arg;
+			buffer->append((char*)dataptr, len);
+			return len;
 		}
+
+		MockServerConnection() {
+			
+			init(&mockSocket, writeDataMock);
+		}
+
+
 
 		inline bool write(uint8_t* data, uint16_t len) {
 			buffer.append((char*)data, len);

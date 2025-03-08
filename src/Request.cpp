@@ -147,6 +147,7 @@ moreData:
 	}
 	else {
 		appendToBuffer(data, dataEndPtr - data);
+		bufferReadPos = 0;
 		lastResult = MoreData;
 	}
 

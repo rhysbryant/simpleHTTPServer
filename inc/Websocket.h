@@ -21,7 +21,7 @@
 
 #include "Request.h"
 #include "Response.h"
-#include "CBuffer.h"
+#include "../inc/CBuffer.h"
 #define RTOS
 namespace SimpleHTTP
 {
@@ -37,6 +37,17 @@ namespace SimpleHTTP
 			FrameTypePing = 0x9,
 			FrameTypePong = 0xA
 		} FrameType;
+
+		typedef struct Payload {
+			//pointer to data for send
+			const uint8_t* data;
+			//size of the data chunk
+			const uint32_t size;
+			//if true no copy of the data is made
+			const bool byRef;
+			//pointer to the next chunk of frame payload
+			const Payload* next;
+		};
 
 		typedef struct
 		{
@@ -82,16 +93,13 @@ namespace SimpleHTTP
 		SimpleHTTP::Result sendCloseFrame(uint16_t code);
 		/*
 		 * writes the websocket frame
-		 * the headerExta data is written with the COPY flag (i.e copied to the LWIP heap)  where as payload is not
+		 * linked list of buffers to be written if byRef in payload is set no copy of the data is made
+		 * so the pointer will need to remain valid
 		 *
 		 */
-		Result writeFrame(FrameType frameType, char *headerExta, const uint16_t headerExtraSize, char *payload, int size);
-		/*
-		 * writes the websocket frame
-		 * the headerExta data is written with the COPY flag (i.e copied to the LWIP heap)  where as payload is not
-		 *
-		 */
-		static Result writeFrame(ServerConnection* conn,FrameType frameType, char *headerExta, const uint16_t headerExtraSize, char *payload, int size);
+		Result writeFrame(FrameType frameType, const Payload* payload);
+
+		static Result writeFrame(ServerConnection* conn, FrameType frameType, const Payload* payload);
 		/**
 		*	parses data as a websocket frame and populates frame structure
 		*	if the frame is incomplete returns the amount of data missing 
@@ -148,7 +156,7 @@ namespace SimpleHTTP
 		bool bufferLock();
 		void bufferUnLock();
 
-		Websocket(){
+		Websocket():recvBuffer(recvBufferBuff,sizeof(recvBufferBuff)){
 			resetBuffer();
 #if SIMPLE_HTTP_RTOS_MODE
 			_bufferLock = xSemaphoreCreateMutex();

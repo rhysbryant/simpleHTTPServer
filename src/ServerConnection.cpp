@@ -73,7 +73,7 @@ Result ServerConnection::parseRequest(void* arg, uint8_t* data, uint16_t len) {
 	return OK;
 }
 
-bool ServerConnection::writeData(uint8_t* data, int len, int writeFlags) {
+bool ServerConnection::writeData(const uint8_t* data, int len, int writeFlags) {
 	if(client == 0){
 		return false;
 	}
@@ -112,7 +112,7 @@ bool ServerConnection::writeData(uint8_t* data, int len, int writeFlags) {
 	if ((apiFlags == 0 && len > 0)) {
 		//put any remaining data on the queue
 		int toSend = len;
-		uint8_t* dataToSend = data;
+		const uint8_t* dataToSend = data;
 		while (toSend > 0) {
 			uint16_t size = toSend < maxSendSize ? toSend : maxSendSize;
 

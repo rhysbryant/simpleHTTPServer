@@ -27,14 +27,14 @@ using SimpleHTTPTest::MockServerConnection;
 
 TEST(Response, DefaultResponse) {
 	MockServerConnection conn;
-	Response r(&conn, true);
+	Response r(&conn, true, SimpleHTTP::HTTP11);
 	r.finalize();
 	ASSERT_EQ(conn.buffer, "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nKeep-Alive: timeout=15, max=1000\r\n\r\n");
 }
 
 TEST(Response, SingleWrite) {
 	MockServerConnection conn;
-	Response r(&conn, true);
+	Response r(&conn, true,  SimpleHTTP::HTTP11);
 	string str = "Hello World";
 	r.write(str.c_str(), str.length());
 	r.finalize();
@@ -44,7 +44,7 @@ TEST(Response, SingleWrite) {
 
 TEST(Response, SingleChunk) {
 	MockServerConnection conn;
-	Response r(&conn, true);
+	Response r(&conn, true, SimpleHTTP::HTTP11);
 	string str = "Hello World";
 	r.write(str.c_str(), str.length());
 	r.flush();
@@ -63,9 +63,10 @@ TEST(Response, SingleChunk) {
 
 TEST(Response, ManyChunks) {
 	MockServerConnection conn;
-	Response r(&conn, true);
+	
+	Response r(&conn, true,SimpleHTTP::HTTP11);
 
-	string expectedResponse = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nKeep-Alive: timeout=15, max=1000\r\n\r\n154\r\nHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello Worl\r\nD2\r\ndHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello World\r\n0\r\n\r\n";
+	string expectedResponse = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nKeep-Alive: timeout=15, max=1000\r\n\r\n17E\r\nHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello Wo\r\nA8\r\nrldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello WorldHello World\r\n0\r\n\r\n";
 	string msg = "Hello World";
 
 	for (int i = 0; i < 50; i++) {

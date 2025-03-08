@@ -1,5 +1,5 @@
 include_directories (simpleHttp ../inc)
-add_executable (simpleHttp Request.cpp utility.cpp Response.cpp CBuffer.cpp Websocket.cpp WebsocketTest.cpp RequestTest.cpp ResponseTest.cpp sha1.c cencode.c ServerConnection.cpp)
+add_executable (simpleHttp Request.cpp utility.cpp Response.cpp CBuffer.cpp Websocket.cpp WebSocketManager.cpp RequestTest.cpp ResponseTest.cpp sha1.c cencode.c ServerConnection.cpp)
 include(FetchContent)
 FetchContent_Declare(
   googletest

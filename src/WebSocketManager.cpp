@@ -111,10 +111,10 @@ Result WebsocketManager::dataReceivedHandler(void* arg, uint8_t* data, uint16_t 
 	return OK;
 }
 
-void WebsocketManager::writeFrameToAll(Websocket::FrameType frameType, char* headerExta, const uint16_t headerExtraSize, char* payload, int size) {
+void WebsocketManager::writeFrameToAll(Websocket::FrameType frameType, const Websocket::Payload* payload) {
 	for (int i = 0; i < poolSize; i++) {
 		if (connections[i].isInUse()) {
-			connections[i].writeFrame(frameType, headerExta, headerExtraSize, payload, size);
+			connections[i].writeFrame(frameType, payload);
 		}
 	}
 }
@@ -150,22 +150,24 @@ void WebsocketManager::process(){
 				//frames that require echoing back the payload
 				if( f.frameType == Websocket::FrameTypeConnectionClose ){
 					if( !ws->isCloseRequestedByServer() ){
-						ws->writeFrame(f.frameType,(char*)f.payload,f.payloadLength,"",0);
+						Websocket::Payload closePayload{ (uint8_t*)f.payload,f.payloadLength,false,nullptr };
+						ws->writeFrame(f.frameType, &closePayload);
 					}
 				}else if( f.frameType == Websocket::FrameTypePing ){
-					ws->writeFrame(Websocket::FrameTypePong,(char*)f.payload,f.payloadLength,"",0);
+					Websocket::Payload pongPayload{ (uint8_t*)f.payload,f.payloadLength,false,nullptr };
+					ws->writeFrame(Websocket::FrameTypePong, &pongPayload);
 				}else if(f.frameType == Websocket::FrameTypePong){
 					ws->lastPongReceived = os_getUnixTime();
 				}
 
-			}else if( os_getUnixTime() - ws->lastPingSent > 15000 ){
+			}else if( false || os_getUnixTime() - ws->lastPingSent > 15000 ){
 
 				if( ws->lastPongReceived != 0 && os_getUnixTime() -  ws->lastPongReceived > 60000 ){
 					ws->getConnection()->closeWithOutLocking();
 					return;
 				}
 
-				if( ws->writeFrame(Websocket::FrameTypePing,"",0,"",0) == ERROR ) {
+				if( ws->writeFrame(Websocket::FrameTypePing,nullptr) == ERROR ) {
 					SHTTP_LOGE(__FUNCTION__,"closing due to ping error");
 					ws->getConnection()->close();
 				}

@@ -138,7 +138,7 @@ namespace SimpleHTTP {
 		static const int WriteFlagNoFlush = 4;
 
 		
-		bool writeData(uint8_t* data, int len, int writeFlags);
+		bool writeData(const uint8_t* data, int len, int writeFlags);
 
 		/*
 		 * writes data to the client connection and flushes it
@@ -202,7 +202,7 @@ namespace SimpleHTTP {
 		}
 
 		inline bool getRemoteIPAddress(char *buf, int buflen){
-			return ip4addr_ntoa_r(&client->remote_ip,buf,buflen)!=0;
+			return ip4addr_ntoa_r(&client->remote_ip, buf, buflen) != 0;
 		}
 
 	};

@@ -22,7 +22,7 @@
 
 using namespace SimpleHTTP;
 
-Response::Response(ServerConnection* conn, bool connectionKeepAlive,HTTPVersion requestVersion) {
+Response::Response(ServerConnection* conn, bool connectionKeepAlive, HTTPVersion requestVersion)  {
 	responseHeaderBufferPos = responseBuffer;
 	responseBufferBodyStart = responseBuffer + responseBufferHeadersReservedSize;
 	responseBufferPos = responseBufferBodyStart;

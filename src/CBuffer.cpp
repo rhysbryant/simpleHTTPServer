@@ -1,4 +1,4 @@
-#include "CBuffer.h"
+#include "../inc/CBuffer.h"
 #include <string.h>
 #include <math.h>
 using SimpleHTTP::CBuffer;

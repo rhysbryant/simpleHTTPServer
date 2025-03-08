@@ -45,7 +45,7 @@ namespace SimpleHTTP
 
         static void upgradeHandler(Request *req, Response *resp);
 
-        static void writeFrameToAll(Websocket::FrameType frameType, char* headerExta, const uint16_t headerExtraSize, char* payload, int size);
+        static void writeFrameToAll(Websocket::FrameType frameType, const SimpleHTTP::Websocket::Payload* payload);
 
         static inline void setFrameReceivedHandler(FrameReceivedHandler frh){
             frameReceivedHandler = frh;
