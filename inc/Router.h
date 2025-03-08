@@ -39,6 +39,8 @@ namespace SimpleHTTP {
 		static const uint32_t KeepaliveTimeout = 60 * 1000;
 		static const int maxClientConnections = 10;
 		static ServerConnection clients[maxClientConnections];
+
+		static int lastConnectionsInUse;
 	public:
 		/**
 		 * add URL path to handler (callback function) mapping
@@ -53,5 +55,6 @@ namespace SimpleHTTP {
 		static void process();
 
 		static ServerConnection* getFreeConnection();
+		static int getConnectionsInUseCount();
 	};
 };

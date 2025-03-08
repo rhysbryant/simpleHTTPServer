@@ -1,147 +1,104 @@
+/*
+ *  Copyright (c) 2023 Rhys Bryant
+ *  Author Rhys Bryant
+ *
+ *	This file is part of SimpleHTTP
+ *
+ *   SimpleHTTP is free software: you can redistribute it and/or modify
+ *   it under the terms of the GNU Lesser General Public License as published by
+ *   the Free Software Foundation, either version 3 of the License, or
+ *   any later version.
+ *
+ *   SimpleHTTP is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU Lesser General Public License for more details.
+ *
+ *   You should have received a copy of the GNU Lesser General Public License
+ *   along with SimpleHTTP.  If not, see <http://www.gnu.org/licenses/>.
+ */
 #include "SecureServerConnection.h"
 #include "log.h"
 
+using namespace SimpleHTTP::Internal;
 using namespace SimpleHTTP;
 
-SecureServerConnection::SecureServerConnection(struct tcp_pcb* client,ServerConnection* planTextLayerConn){
+SecureServerConnection::SecureServerConnection() {
+	mbedtls_ssl_init(&ssl);
+	firstUse = true;
+
+}
+
+void SecureServerConnection::init(struct tcp_pcb* client, ServerConnection* planTextLayerConn) {
 	this->tpcb = client;
 	this->planTextLayerConn = planTextLayerConn;
 
-
-
-	bufTail.payload = nullptr;
-	bufTail.len = 0;
-	lastRemainingLength = 0;
-	writeBlockedWaitingOnAckForSize = 0;
-	clearWriteBlock = false;
-	plainTextLengthPendingNotification = 0;
-	writeBufWaitingAck = 0;
-	lastPlainTextSize = 0;
-    lastPlainTextPtr = 0;
-
-	planTextLayerConn->init(client,plainTextLayerWriteCallback);
-
-}
-
-int SecureServerConnection::initSSLContext(mbedtls_ssl_config* conf,mbedtls_ssl_send_t *f_send, mbedtls_ssl_recv_t *f_recv){
-    mbedtls_ssl_init(&ssl);
-    auto result = mbedtls_ssl_setup(&ssl, conf);
-    if(result == 0){
-        mbedtls_ssl_set_bio(&ssl, this, mbedtlsTCPSendCallback, mbedtlsTCPRecvCallback, NULL);
-		//maxSendSize = mbedtls_ssl_get_max_out_record_payload(&ssl);
-    }
-    return result;
-}
-
-SecureServerConnection::~SecureServerConnection(){
-	mbedtls_ssl_free(&ssl);
-	while(!readQueue.empty()){
+	while (!readQueue.empty()) {
 		pbuf_free(readQueue.front());
 		readQueue.pop();
 	}
 
-	while(!writeQueue.empty()){
-		auto item = writeQueue.front();
-		if(item.flags & ChunkForSendFlagMem){
-			delete item.data;
-		}
-		writeQueue.pop();
+	bufTail.payload = nullptr;
+	bufTail.next = nullptr;
+	bufTail.len = 0;
+	writeBufWaitingAck = 0;
+	lastPlainTextSize = 0;
+	lastPlainTextPtr = 0;
+
+	incompleteOutLength = 0;
+	incompleteOutPtr = nullptr;
+
+	planTextLayerConn->init(client, this);
+
+}
+
+int SecureServerConnection::initSSLContext(mbedtls_ssl_config* conf) {
+	int result = -1;
+
+	result = mbedtls_ssl_setup(&ssl, conf);
+	if (result != 0) {
+		firstUse = false;
+		return result;
 	}
+
+
+	if (result == 0) {
+		mbedtls_ssl_set_bio(&ssl, this, mbedtlsTCPSendCallback, mbedtlsTCPRecvCallback, NULL);
+	}
+	return result;
+}
+
+SecureServerConnection::~SecureServerConnection() {
+
+	while (!readQueue.empty()) {
+		pbuf_free(readQueue.front());
+		readQueue.pop();
+	}
+	planTextLayerConn->runFreeSessionHandler();
+	planTextLayerConn->dataReceived(planTextLayerConn->dataReceivedArg, 0, 0);
 	planTextLayerConn->init(0);
-	
+
 }
 
-bool SecureServerConnection::queueSSLDataForSend(uint8_t* data, int len) {
-
-	SHTTP_LOGD(__FUNCTION__, "length %d", len);
-
-	uint8_t* buf = data;
-	uint8_t chunkFlags = 0;
-	///if under the max size take a copy to allow other packets to be sent in parallel
-	if (len < maxSendSize) {
-		buf = new uint8_t[len];
-		memcpy(buf, data, len);
-		chunkFlags |= ChunkForSendFlagMem;
-	}
-
-
-	int toSend = len;
-	uint8_t* dataToSend = buf;
-	while (toSend > 0) {
-		uint16_t size = toSend < maxSendSize ? toSend : maxSendSize;
-
-		ChunkForSend c{
-			dataToSend,
-			size,
-			((uint16_t)toSend) == size ? lastPlainTextSize : (uint16_t)0,
-			lastPlainTextPtr,
-			chunkFlags
-		};
-
-		SHTTP_LOGI(__FUNCTION__, "ChunkForSend, size %d", (int)size);
-
-		writeQueue.push(c);
-
-		dataToSend += size;
-		toSend -= size;
-
-	}
-
-	return chunkFlags & ChunkForSendFlagMem;
-}
-
-err_t  SecureServerConnection::sendNextSSLDataChunk() {
-	SHTTP_LOGI(__FUNCTION__, "%d chunks in queue", writeQueue.size());
-	while (!writeQueue.empty()) {
-		auto current = writeQueue.front();
-
-
-		if (writeBufWaitingAck + current.size > maxSendSize) {
-			SHTTP_LOGI(__FUNCTION__, "sendNextChunk stopping at %d next chunk %d", writeBufWaitingAck, (int)current.size);
-			break;
-		}
-
-		SHTTP_LOGI(__FUNCTION__, "sending addr %d %d(%d)", (int)current.data, (int)current.size, (int)current.plainTextSize);
-
-		auto result = tcp_write(tpcb, current.data, current.size, 0);
-		if (result == ERR_OK) {
-			writeBufWaitingAck += current.size;
-
-			if ((current.flags & ChunkForSendFlagMem) == 0) {
-				writeBlockedWaitingOnAckForSize = current.plainTextSize;
-				//writeIsBlocked = true;
-			}
-
-			current.flags |= ChunkForSendFlagSent;
-			sentWaitingAckQueue.push(current);
-			writeQueue.pop();
-		}
-		else {
-			SHTTP_LOGE(__FUNCTION__, "write returned %d", result);
-			return result;
-		}
-
-	}
-
-	return tcp_output(tpcb);
-}
-
-bool SecureServerConnection::isReviceQueueEmpty(){
-    return readQueue.empty();
+bool SecureServerConnection::isReviceQueueEmpty() {
+	return readQueue.empty();
 }
 
 pbuf* SecureServerConnection::getNextBufferForRead() {
 	if (readQueue.empty()) {
-		SHTTP_LOGI(__FUNCTION__, "queue empty");
+		SHTTP_LOGD(__FUNCTION__, "queue empty");
 		return 0;
 	}
 	//if nothing left in the current buffer free it and move to the next
 	if (bufTail.len == 0) {
 		//if there was a buffer before free it 
 		if (bufTail.payload != nullptr) {
+			if (bufTail.next != nullptr) {
+				SHTTP_LOGE(__FUNCTION__, "unimplemented chained buffer");
+			}
 
 			auto current = readQueue.front();
-			SHTTP_LOGI(__FUNCTION__, "freeing buffer, size %d", current->len);
+			SHTTP_LOGD(__FUNCTION__, "freeing buffer, size %d", current->len);
 			tcp_recved(tpcb, current->len);
 			pbuf_free(current);
 			readQueue.pop();
@@ -150,10 +107,10 @@ pbuf* SecureServerConnection::getNextBufferForRead() {
 
 		if (!readQueue.empty()) {
 			bufTail = *readQueue.front();
-			SHTTP_LOGI(__FUNCTION__, "assigning buffer, size %d", bufTail.len);
+			SHTTP_LOGD(__FUNCTION__, "assigning buffer, size %d", bufTail.len);
 		}
 		else {
-			SHTTP_LOGI(__FUNCTION__, "queue now empty heap free %d min seen %d", (int)esp_get_free_heap_size(), (int)esp_get_minimum_free_heap_size());
+			SHTTP_LOGD(__FUNCTION__, "queue now empty heap free %d min seen %d", (int)esp_get_free_heap_size(), (int)esp_get_minimum_free_heap_size());
 			return 0;
 		}
 	}
@@ -162,10 +119,10 @@ pbuf* SecureServerConnection::getNextBufferForRead() {
 }
 
 int SecureServerConnection::sslSessionProcess(pbuf* newData) {
-    if(newData != nullptr){
-		SHTTP_LOGI(__FUNCTION__, "got %d bytes putting, queuing", newData->len);
-        readQueue.push(newData);
-    }
+	if (newData != nullptr) {
+		SHTTP_LOGD(__FUNCTION__, "got %d bytes putting, queuing", newData->len);
+		readQueue.push(newData);
+	}
 
 	if (!mbedtls_ssl_is_handshake_over(&ssl))
 	{
@@ -189,9 +146,9 @@ int SecureServerConnection::sslSessionProcess(pbuf* newData) {
 
 		while (true) {
 			auto result = mbedtls_ssl_read(&ssl, recvBuf, sizeof(recvBuf) - 1);
-			if (result > 0) {
+			if (result >= 0) {
 				recvBuf[result] = 0;
-				SHTTP_LOGD(__FUNCTION__, "got [%s]", recvBuf);
+				SHTTP_LOGD(__FUNCTION__, "got payload [%s]", recvBuf);
 				planTextLayerConn->dataReceived(planTextLayerConn->dataReceivedArg, (uint8_t*)recvBuf, result);
 			}
 			else if (!(result == MBEDTLS_ERR_SSL_WANT_READ || result == MBEDTLS_ERR_SSL_WANT_WRITE)) {
@@ -214,17 +171,20 @@ int SecureServerConnection::sslSessionProcess(pbuf* newData) {
 	return 0;
 }
 
-int SecureServerConnection::writeData(const void* dataptr, u16_t len, u8_t apiflags){
-	uint8_t* data = (uint8_t*)dataptr;
+int SecureServerConnection::write(const void* dataptr, u16_t len, u8_t apiflags) {
 
-	SHTTP_LOGI(__FUNCTION__, "calling mbedtls_ssl_write()");
+	if (len == 0) {
+		return ERR_OK;
+	}
+
+	uint8_t* data = (uint8_t*)dataptr;
 
 	lastPlainTextSize = len;
 	lastPlainTextPtr = data;
 	auto result = mbedtls_ssl_write(&ssl, (const unsigned char*)dataptr, len);
-	SHTTP_LOGI(__FUNCTION__, "len %d result %d", len, result);
+	SHTTP_LOGD(__FUNCTION__, "len %d result %d", len, result);
 	if (result == MBEDTLS_ERR_SSL_WANT_WRITE) {
-		SHTTP_LOGI(__FUNCTION__, "mbedtls_ssl_write blocking pending send of %d", (int)len);
+		SHTTP_LOGD(__FUNCTION__, "mbedtls_ssl_write blocking pending send of %d", (int)len);
 	}
 	if (result >= 0 || result == MBEDTLS_ERR_SSL_WANT_WRITE) {
 		return len;
@@ -242,61 +202,66 @@ int SecureServerConnection::writeData(const void* dataptr, u16_t len, u8_t apifl
 	}
 }
 
-int SecureServerConnection::plainTextLayerWriteCallback(tcp_pcb* pcb, const void* dataptr, u16_t len, u8_t apiflags) {
-	return static_cast<SecureServerConnection*>(pcb->callback_arg)->plainTextLayerWriteCallback(dataptr,len,apiflags);
-}
-
-int SecureServerConnection::plainTextLayerWriteCallback(const void* dataptr, u16_t len, u8_t apiflags) {
-	if (len == 0) {
-		return ERR_OK;
-	}
-
-	return writeData(dataptr,len,apiflags);
-}
 
 int SecureServerConnection::mbedtlsTCPSendCallback(void* ctx, const unsigned char* buf, size_t len) {
-	return static_cast<SecureServerConnection*>(ctx)->mbedtlsTCPSendCallback(buf,len);
+	return static_cast<SecureServerConnection*>(ctx)->mbedtlsTCPSendCallback(buf, len);
 }
 
-int SecureServerConnection::mbedtlsTCPSendCallback(const unsigned char* buf, size_t len){
-	SHTTP_LOGI(__FUNCTION__, "length %d waiting on send of %d", (int)len, (int)0);
+int SecureServerConnection::mbedtlsTCPSendCallback(const unsigned char* buf, size_t len) {
+	SHTTP_LOGD(__FUNCTION__, "length %d waiting on send of %d", (int)len, (int)0);
 
-	if (writeBlockedWaitingOnAckForSize) {
-		if (clearWriteBlock) {
-			writeBlockedWaitingOnAckForSize = 0;
-			clearWriteBlock = false;
-			SHTTP_LOGI(__FUNCTION__, "finished blocking write");
-			return len;
+	//if the last call failed ensure we are continuing from where we left off
+	if (((const unsigned char*)incompleteOutPtr) != buf && incompleteOutLength > 0) {
+		SHTTP_LOGE(__FUNCTION__, "is blocked waiting for buffer space");
+		return MBEDTLS_ERR_SSL_WANT_WRITE;
+	}
+
+
+	auto bufLen = tcp_sndbuf(tpcb);
+
+	err_t  err;
+	int written = 0;
+	if (bufLen > 0) {
+		incompleteOutLength = 0;
+		if (bufLen > len) {
+			err = tcp_write(tpcb, buf, len, TCP_WRITE_FLAG_COPY);
+			written = len;
 		}
 		else {
-			SHTTP_LOGE(__FUNCTION__, "blocked");
-			return MBEDTLS_ERR_SSL_WANT_WRITE;
+			err = tcp_write(tpcb, buf, bufLen, TCP_WRITE_FLAG_COPY);
+			written = bufLen;
 		}
+
+		if (err != ERR_OK) {
+			SHTTP_LOGE(__FUNCTION__, "tcp_write failed %d %d", (int)err, (int)len);
+			return MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL;
+		}
+		auto oErr = tcp_output(tpcb);
+		if (oErr != ERR_OK) {
+			SHTTP_LOGE(__FUNCTION__, "tcp_output failed %d %d", (int)err, (int)len);
+			return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+		}
+		writeBufWaitingAck += written;
+		return written;
+	}
+	else {
+		incompleteOutLength = len;
+		incompleteOutPtr = (char*)buf;
+		//no more buffer space signal up the stack write will need to be called again
+		return MBEDTLS_ERR_SSL_WANT_WRITE;
 	}
 
-	auto wasCopied = queueSSLDataForSend((uint8_t*)buf, len);
-
-	auto result = sendNextSSLDataChunk();
-	if (result != ERR_OK) {
-		return MBEDTLS_ERR_NET_SEND_FAILED;
-	}
-
-	//if the data was not copied this method needs to go into a "blocking" like state
-	if (wasCopied) {
-		return len;
-	}
-	return MBEDTLS_ERR_SSL_WANT_WRITE;
 }
 
 int SecureServerConnection::mbedtlsTCPRecvCallback(void* ctx, unsigned char* buf, size_t len) {
-	return static_cast<SecureServerConnection*>(ctx)->mbedtlsTCPRecvCallback(buf,len);
+	return static_cast<SecureServerConnection*>(ctx)->mbedtlsTCPRecvCallback(buf, len);
 }
 
 
 int SecureServerConnection::mbedtlsTCPRecvCallback(unsigned char* buf, size_t len) {
 
 	if (isReviceQueueEmpty()) {
-		SHTTP_LOGI(__FUNCTION__, "want %d bytes not here yet", (int)len);
+		SHTTP_LOGD(__FUNCTION__, "want %d bytes not here yet", (int)len);
 		return MBEDTLS_ERR_SSL_WANT_READ;
 	}
 
@@ -330,55 +295,48 @@ int SecureServerConnection::mbedtlsTCPRecvCallback(unsigned char* buf, size_t le
 }
 
 Result SecureServerConnection::sendCompleteCallback(int len) {
-	SHTTP_LOGI(__FUNCTION__, "len %d, waiting on %d blocked %d, waiting processing %d", (int)len, (int)writeBufWaitingAck, (int)writeBlockedWaitingOnAckForSize, lastRemainingLength);
+	SHTTP_LOGD(__FUNCTION__, "len %d, waiting on %d blocked, waiting processing", (int)len, (int)writeBufWaitingAck);
 
 	writeBufWaitingAck -= len;
-
-	//the write method is in a "blocking state don't notify the plan text layer until all the chunks have been sent
-	//in that case all are acked at once only the final one holds the sent size
-
-	int size = lastRemainingLength + len;
-	if (size >= writeBlockedWaitingOnAckForSize) {
-		SHTTP_LOGI(__FUNCTION__, "waiting on ack for %d chunks", (int)sentWaitingAckQueue.size());
-		while (!sentWaitingAckQueue.empty()) {
-			const ChunkForSend n = sentWaitingAckQueue.front();
-			SHTTP_LOGI(__FUNCTION__, "size %d, chunk size %d(%d), acked %d", size, (int)n.size, (int)n.plainTextSize, (int)len);
-			if (size - n.size < 0) {
-				break;
-			}
-
-			size -= n.size;
-			sentWaitingAckQueue.pop();
-			//if mbedtls_ssl_write is in a "blocking" state i.e returned want write unblock it
-			//by calling it with the original arguments
-			if ((n.flags & ChunkForSendFlagMem) == 0 && n.plainTextSize != 0) {
-				clearWriteBlock = true;
-				auto writeResult = mbedtls_ssl_write(&ssl, (const unsigned char*)n.plainTextPtr, n.plainTextSize);
-				SHTTP_LOGI(__FUNCTION__, "mbedtls_ssl_write returned %d", (int)writeResult);
-			}
-			if (writeQueue.empty()) {
-				// notify the plain text layer the data has been sent if the next check is non blocking
-				SHTTP_LOGI(__FUNCTION__, "calling sendCompleteCallback(%d)", (int)n.plainTextSize);
-				planTextLayerConn->sendCompleteCallback(n.plainTextSize + plainTextLengthPendingNotification);
-				plainTextLengthPendingNotification = 0;
-			}
-			else {
-				plainTextLengthPendingNotification += n.plainTextSize;
-			}
-
-			//if the data was copied to a new pointer free it now 
-			if (n.flags & ChunkForSendFlagMem) {
-				delete n.data;
-			}
-		}
-
-		if (writeBufWaitingAck <= 0 && sentWaitingAckQueue.empty()) {
-			auto result = sendNextSSLDataChunk();
-			if (result != ERR_OK) {
-				SHTTP_LOGI(__FUNCTION__, "ERROR %d", (int)result);
-			}
+	//write is incomplete (last call could not complete) and is waiting for more space to continue
+	//call again with the same arguments
+	//if sucsessfull more data will be written from the ssl output buf
+	if (incompleteOutLength > 0) {
+		auto result = write(lastPlainTextPtr, lastPlainTextSize, 0);
+		if (result < 0) {
+			SHTTP_LOGE(__FUNCTION__, "call to write failed, %d", result);
+			return ERROR;
 		}
 	}
-	lastRemainingLength = size;
+	else {
+		//there is nothing in the ssl output buf request more data from the plan text layer
+		auto result = planTextLayerConn->sendCompleteCallback(lastPlainTextSize);
+		if (result == ERROR) {
+			SHTTP_LOGE(__FUNCTION__, "pt sendCompleteCallback failed");
+			return ERROR;
+		}
+	}
+
+
 	return OK;
+}
+
+err_t SecureServerConnection::shutdown() {
+	tcp_arg(tpcb, nullptr);
+	tcp_close(tpcb);
+	tpcb = 0;
+	mbedtls_ssl_free(&ssl);
+	return 0;
+}
+
+void SecureServerConnection::close() {
+	planTextLayerConn->close();
+}
+
+void SecureServerConnection::closeWithoutLock() {
+	planTextLayerConn->closeWithOutLocking();
+}
+
+int SecureServerConnection::getAvailableSendBuffer() {
+	return tcp_sndbuf(tpcb);
 }

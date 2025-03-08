@@ -22,7 +22,7 @@
 using namespace SimpleHTTP;
 
 bool ServerConnection::isConnected() {
-	return client != 0;
+	return transport != 0;
 }
 
 ServerConnection::ServerConnection() {
@@ -40,22 +40,27 @@ void ServerConnection::init(struct tcp_pcb* client) {
 	dataReceived = parseRequest;
 	dataReceivedArg = this;
 
-	while(!sendQueue.empty()){
+	while (!sendQueue.empty()) {
 		sendQueue.pop();
 	}
 
 	sessionArg = 0;
 	sessionArgFreeHandler = 0;
-
-	writeDataInternal = writePlainText;
-
 	this->currentRequest.reset();
-	this->client = client;
+	if (client != 0) {
+		this->defaultTransport.setPCB(client);
+		this->transport = &defaultTransport;
+	}
+	else {
+		this->transport = 0;
+	}
 }
 
-void ServerConnection::init(struct tcp_pcb* client, WriteData callback) {
+void ServerConnection::init(struct tcp_pcb* client, Transport* t) {
 	init(client);
-	writeDataInternal = callback;
+	if (t != nullptr) {
+		this->transport = t;
+	}
 }
 
 Result ServerConnection::parseRequest(void* arg, uint8_t* data, uint16_t len) {
@@ -75,12 +80,12 @@ Result ServerConnection::parseRequest(void* arg, uint8_t* data, uint16_t len) {
 }
 
 bool ServerConnection::writeData(uint8_t* data, int len, int writeFlags) {
-	if(client == 0){
+	if (!isConnected()) {
 		return false;
 	}
-	int apiFlags = (writeFlags & WriteFlagZeroCopy) ? 0 : TCP_WRITE_FLAG_COPY;
+	int apiFlags = (writeFlags & Transport::WriteFlagZeroCopy) ? 0 : TCP_WRITE_FLAG_COPY;
 	bool locked = false;
-	if ((writeFlags & WriteFlagNoLock) == 0) {
+	if ((writeFlags & Transport::WriteFlagNoLock) == 0) {
 		LOCK_TCPIP_CORE();
 		locked = true;
 	}
@@ -91,14 +96,11 @@ bool ServerConnection::writeData(uint8_t* data, int len, int writeFlags) {
 		int dataLengthWritten = 0;
 
 
-		dataLengthWritten = writeDataInternal(client, data, size, apiFlags);
-		if (dataLengthWritten >= 0 && (writeFlags & WriteFlagNoFlush) == 0) {
-			//tcp_output(client);
-		}
-			
+		dataLengthWritten = transport->write(data, size, apiFlags);
+
 
 		if (dataLengthWritten < 0) {
-			if(locked){
+			if (locked) {
 				UNLOCK_TCPIP_CORE();
 			}
 			return false;
@@ -108,7 +110,7 @@ bool ServerConnection::writeData(uint8_t* data, int len, int writeFlags) {
 		data += size;
 		waitingForSendCompleteSize += dataLengthWritten;
 	}
-//queueChunks:
+	//queueChunks:
 
 	if ((apiFlags == 0 && len > 0)) {
 		//put any remaining data on the queue
@@ -121,7 +123,7 @@ bool ServerConnection::writeData(uint8_t* data, int len, int writeFlags) {
 				dataToSend,
 				size
 			};
-			
+
 			sendQueue.push(c);
 
 			dataToSend += size;
@@ -130,7 +132,7 @@ bool ServerConnection::writeData(uint8_t* data, int len, int writeFlags) {
 		}
 	}
 
-	if(locked){
+	if (locked) {
 		UNLOCK_TCPIP_CORE();
 	}
 
@@ -142,11 +144,11 @@ bool ServerConnection::writeData(uint8_t* data, int len, int writeFlags) {
 bool ServerConnection::sendNextFromQueue() {
 
 	ChunkForSend c = sendQueue.front();
-	int dataWritten = writeDataInternal(client, (uint8_t*)c.data, c.size, 0);
+	int dataWritten = transport->write((uint8_t*)c.data, c.size, 0);
 	if (dataWritten >= 0) {
 		sendQueue.pop();
 		waitingForSendCompleteSize += dataWritten;
-		auto err = tcp_output(client);
+		//auto err = tcp_output(client);
 		return true;
 	}
 	else {

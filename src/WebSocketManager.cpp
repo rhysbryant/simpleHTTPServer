@@ -128,7 +128,23 @@ int WebsocketManager::nextFreeClientIndex(){
 	return -1;
 }
 
+int WebsocketManager::getConnectionsInUseCount(){
+	int count = 0;
+	for(int i=0;i<poolSize;i++){
+		if( connections[i].isInUse()){
+			count++;
+		}
+	}
+	return count;
+}
+
 void WebsocketManager::process(){
+	auto connCountInUse = getConnectionsInUseCount();
+	if( lastConnectionsInUse != connCountInUse){
+		SHTTP_LOGI(__FUNCTION__,"ws %d connections in use",connCountInUse);
+		lastConnectionsInUse = connCountInUse;
+	}
+
 	for(int i=0;i< poolSize;i++){
 		if( connections[i].isInUse() ){
 			auto ws = &connections[i];
@@ -159,12 +175,13 @@ void WebsocketManager::process(){
 				}
 
 			}else if( os_getUnixTime() - ws->lastPingSent > 15000 ){
-
-				if( ws->lastPongReceived != 0 && os_getUnixTime() -  ws->lastPongReceived > 60000 ){
-					ws->getConnection()->closeWithOutLocking();
+				SHTTP_LOGD(__FUNCTION__,"ws check");
+				if( (ws->lastPongReceived != 0 && os_getUnixTime() -  ws->lastPongReceived > 60000) || (ws->lastPongReceived  == 0 && os_getUnixTime()  - ws->getConnection()->lastRequestTime > 60000)  ){
+					SHTTP_LOGE(__FUNCTION__,"ws close no pong");
+					ws->getConnection()->close();
 					return;
 				}
-
+				SHTTP_LOGD(__FUNCTION__,"pinging connect %d",i);
 				if( ws->writeFrame(Websocket::FrameTypePing,"",0,"",0) == ERROR ) {
 					SHTTP_LOGE(__FUNCTION__,"closing due to ping error");
 					ws->getConnection()->close();
@@ -182,3 +199,4 @@ void WebsocketManager::process(){
 
 Websocket WebsocketManager::connections[poolSize];
 WebsocketManager::FrameReceivedHandler WebsocketManager::frameReceivedHandler=0;
+int WebsocketManager::lastConnectionsInUse = 0;

@@ -39,10 +39,12 @@ extern "C" {
 
 #include "common.h"
 
+using namespace SimpleHTTP::Internal;
+
 namespace SimpleHTTP {
 	class SecureServer {
 	private:
-	
+
 		static struct tcp_pcb* tcpServer;
 
 		static err_t tcp_sent_cb(void* arg, struct tcp_pcb* tpcb, u16_t len);
@@ -58,10 +60,17 @@ namespace SimpleHTTP {
 		static mbedtls_ssl_cache_context cache;
 		static bool crtInitDone;
 
-		//entry point for sending of unedncripted data
-		static int tcp_write_tls(tcp_pcb* pcb, const void* dataptr, u16_t len, u8_t apiflags);
+		static int getConnectionsInUseCount();
+
+		static void freeUp(SecureServerConnection* conn) {
+			conn->close();
+		}
 
 		static const int maxSendSize = ServerConnection::maxSendSize + 29;
+
+		static const int maxNumConnections = 10;
+
+		static SecureServerConnection wrappers[maxNumConnections];
 
 	public:
 		static int loadPrivateKey(SimpleString* cert);

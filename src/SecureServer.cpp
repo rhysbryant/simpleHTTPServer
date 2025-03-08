@@ -21,59 +21,52 @@
 #include "Router.h"
 #include <queue>
 #include "log.h"
- /*
- * data sending flow
- *
- * the payload for sent is divided into chunks of upto maxSendSize in size
- *
- * based round 3 queues plan text data queue (in ClientConnection class) -> tls write data queue -> chunk waiting Ack queue
 
- * tcp_write_tls callback from http lib - with plan text data for sending
- * mbedtls_tcp_send callback from mbedtls - with tls data for sending
- * tcp_sent_cb callback from network stack - data has been acked
- *
- * (connection).sendCompleteCallback will send the next plan text chunk if any i.e will call tcp_write_tls
- * sendNextChunk will send the next chunk of tls data
- *
- * if the payload is over maxSendSize mbedtls_ssl_write will go into a "blocking" like state i.e will return a busy status
- * until the blocking data has been acked. otherwise (under maxSendSize) a copy is made of the payload and mbedtls_ssl_write can be called again
- * before the previously sent data has been acked
- *
- * the two main use cases we need to account for are are lots of small chunks being sent in parallel and large of maxSendSize being sent one at a time
- *
- * data receive flow
- *
- * the pbuf from the lwip receive callback is queued and freed in the mbedtls mbedtls_tcp_recv callback
- * called from within mbedtls_ssl_read() and mbedtls_ssl_handshake()
- */
 using namespace SimpleHTTP;
 
 err_t SecureServer::tcp_accept_cb(void* arg, struct tcp_pcb* newpcb, err_t err)
 {
-
+	SHTTP_LOGI(__FUNCTION__, "SSL wrappers in use %d",getConnectionsInUseCount());
 	auto conn = Router::getFreeConnection();
 	if (conn == 0) {
 		tcp_abort(newpcb);
 		return ERR_ABRT;
 	}
-	SHTTP_LOGI(__FUNCTION__, "before setup; heap free %d min seen %d", (int)esp_get_free_heap_size(), (int)esp_get_minimum_free_heap_size());
-	auto s = new SecureServerConnection(newpcb,conn);
+ 
+	int freeIndex = -1;
+	for( int i=0;i< maxNumConnections;i++ ){
+		if(! wrappers[i].inUse() ){
+			freeIndex = i;
+		}
+	}
+
+	if( freeIndex == -1){
+		SHTTP_LOGE(__FUNCTION__, "no free SSL wrappers/clients");
+		tcp_abort(newpcb);
+		return ERR_ABRT;
+	}
+
+	//SHTTP_LOGI(__FUNCTION__, "before setup; heap free %d min seen %d", (int)esp_get_free_heap_size(), (int)esp_get_minimum_free_heap_size());
+	auto s = &wrappers[freeIndex];
+
+
+	auto result = s->initSSLContext(&conf);
+	if ( result != 0) {
+		SHTTP_LOGE(__FUNCTION__, "mbedtls_ssl_setup failed %d", result);
+		tcp_arg(newpcb, nullptr);
+		tcp_abort(newpcb);
+		return ERR_ABRT;
+	}
+
+	
+	s->init(newpcb,conn);
 
 	tcp_arg(newpcb, s);
 	tcp_err(newpcb, tcp_err_cb);
 	tcp_sent(newpcb, tcp_sent_cb);
 	tcp_recv(newpcb, tcp_recv_cb);
 
-	auto result = s->initSSLContext(&conf,nullptr, nullptr);
-	if ( result != 0) {
-		SHTTP_LOGE(__FUNCTION__, "mbedtls_ssl_setup failed %d", result);
-		tcp_arg(newpcb, nullptr);
-		delete s;
-		//tcp_abort(newpcb);
-		return ERR_ABRT;
-	}
-
-	SHTTP_LOGI(__FUNCTION__, "connection accepted;heap free %d min seen %d", (int)esp_get_free_heap_size(), (int)esp_get_minimum_free_heap_size());
+	///SHTTP_LOGI(__FUNCTION__, "connection accepted;heap free %d min seen %d", (int)esp_get_free_heap_size(), (int)esp_get_minimum_free_heap_size());
 	s->sslSessionProcess(nullptr);
 
 	return ERR_OK;
@@ -88,9 +81,8 @@ err_t SecureServer::tcp_recv_cb(void* arg, struct tcp_pcb* tpcb, struct pbuf* p,
 		auto conn = static_cast<SecureServerConnection*>(arg);
 		if (p == 0)
 		{
-			SHTTP_LOGI(__FUNCTION__, "closing");
-			delete conn;
-			SHTTP_LOGI(__FUNCTION__, "heap free %d min seen %d", (int)esp_get_free_heap_size(), (int)esp_get_minimum_free_heap_size());
+			conn->closeWithoutLock();
+			SHTTP_LOGD(__FUNCTION__, "SSL wrappers in use %d",getConnectionsInUseCount());
 			tcp_arg(tpcb, nullptr);
 
 			return ERR_OK;
@@ -118,8 +110,9 @@ void SecureServer::tcp_err_cb(void* arg, err_t err)
 	if (arg != 0)
 	{
 		auto conn = static_cast<SecureServerConnection*>(arg);
-		delete conn;
+		conn->closeWithoutLock();
 		SHTTP_LOGI(__FUNCTION__, "err %d", (int)err);
+		SHTTP_LOGI(__FUNCTION__, "SSL wrappers in use %d",getConnectionsInUseCount());
 	}
 }
 
@@ -147,8 +140,7 @@ mbedtls_x509_crt* SecureServer::getCertChain() {
 }
 
 int SecureServer::TLSInit() {
-	//mbedtls_net_init(&listen_fd);
-	//mbedtls_net_init(&client_fd);
+
 	mbedtls_ssl_config_init(&conf);
 #if defined(MBEDTLS_SSL_CACHE_C)
 	mbedtls_ssl_cache_init(&cache);
@@ -202,6 +194,16 @@ void SecureServer::listen(int port)
 	return;
 }
 
+int SecureServer::getConnectionsInUseCount(){
+	int count = 0;
+	for(int i=0;i<maxNumConnections;i++){
+		if( wrappers[i].inUse()){
+			count++;
+		}
+	}
+	return count;
+}
+
 struct tcp_pcb* SecureServer::tcpServer = 0;
 mbedtls_entropy_context SecureServer::entropy;
 mbedtls_ctr_drbg_context SecureServer::ctr_drbg;
@@ -210,3 +212,4 @@ mbedtls_x509_crt SecureServer::srvcert;
 mbedtls_pk_context SecureServer::pkey;
 mbedtls_ssl_cache_context SecureServer::cache;
 bool SecureServer::crtInitDone = false;
+SecureServerConnection SecureServer::wrappers[maxNumConnections];
