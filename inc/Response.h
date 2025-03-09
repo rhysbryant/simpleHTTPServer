@@ -84,7 +84,7 @@ namespace SimpleHTTP {
 		 */
 		bool ensureStatusWritten();
 
-		bool appendHeaders(char* headers, int size);
+		bool appendHeaders(const char* headers, int size);
 
 		bool appendHeadersEOL();
 		/**
@@ -94,9 +94,9 @@ namespace SimpleHTTP {
 		* this method moves the body start pointer backwoods
 		* there for each call appends data to the left
 		**/
-		bool appendBodyPrefix(char* body, int size);
+		bool appendBodyPrefix(const char* body, int size);
 
-		bool appendBody(char* body, int size);
+		bool appendBody(const char* body, int size);
 
 	public:
 

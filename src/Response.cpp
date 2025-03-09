@@ -42,7 +42,7 @@ bool Response::ensureStatusWritten() {
 	return true;
 }
 
-bool Response::appendHeaders(char* headers, int size) {
+bool Response::appendHeaders(const char* headers, int size) {
 	if (responseHeaderBufferPos + size >= responseBufferBodyStart) {
 		//ran out of header space if no body data has been written yet
 		//can just move the body starting pos
@@ -61,10 +61,10 @@ bool Response::appendHeaders(char* headers, int size) {
 }
 
 bool Response::appendHeadersEOL() {
-	return appendHeaders((char*)EOL, sizeof(EOL));
+	return appendHeaders(EOL, sizeof(EOL));
 }
 
-bool Response::appendBodyPrefix(char* data, int size) {
+bool Response::appendBodyPrefix(const char* data, int size) {
 
 	if (responseBufferBodyStart - size <= responseHeaderBufferPos) {
 		return false;
@@ -75,7 +75,7 @@ bool Response::appendBodyPrefix(char* data, int size) {
 	return true;
 }
 
-bool Response::appendBody(char* body, int size) {
+bool Response::appendBody(const char* body, int size) {
 	if (responseBufferPos + size > responseBufferEnd) {
 		return false;
 	}
@@ -111,7 +111,7 @@ int Response::write(const char* data, int length) {
 			lengthToCopy = avBuffer;
 		}
 
-		if (!appendBody((char*)data, lengthToCopy)) {
+		if (!appendBody(data, lengthToCopy)) {
 			return length - remainingDataLength;
 		}
 
@@ -156,7 +156,7 @@ bool Response::writeHeader(Response::Status status) {
 	auto strStatus = statusStrings[status];
 	auto strVersion = HTTPVersions[responseVersion];
 
-	return appendHeaders((char*)strVersion.value, strVersion.size)
+	return appendHeaders(strVersion.value, strVersion.size)
 		&& appendHeaders(" ",1)
 		&& writeHeaderLine(strStatus.value, strStatus.size);
 
@@ -184,7 +184,7 @@ void Response::addContentLengthHeader(int length) {
 
 bool Response::writeHeaderLine(const char* name, int size) {
 	return ensureStatusWritten()
-		&& appendHeaders((char*)name, size)
+		&& appendHeaders(name, size)
 		&& appendHeadersEOL();
 
 }
@@ -195,9 +195,9 @@ bool Response::writeHeaderLine(const char* headerName, const char* value) {
 	int headerValueSize = strlen(value);
 
 	return ensureStatusWritten()
-		&& appendHeaders((char*)headerName, headerNameSize)
+		&& appendHeaders(headerName, headerNameSize)
 		&& appendHeaders(": ", 2)
-		&& appendHeaders((char*)value, headerValueSize)
+		&& appendHeaders(value, headerValueSize)
 		&& appendHeadersEOL();
 }
 
@@ -252,7 +252,7 @@ Result Response::flush(bool finalise) {
 		lengthSize += sizeof(EOL);
 
 		if (!(appendBodyPrefix(tmp, lengthSize)
-			&& appendBody((char*)EOL, sizeof(EOL)))) {
+			&& appendBody(EOL, sizeof(EOL)))) {
 			responseBufferBodyStart = beforeChunkAdd;
 			return ERROR;
 		}
