@@ -24,7 +24,8 @@ namespace SimpleHTTP{
     enum Result{
         OK,
         ERROR,
-        MoreData
+        MoreData,
+		AvailableBufferTooSmall
     };
 
     #define SIMPLE_STR(X) {X,sizeof(X) - 1}

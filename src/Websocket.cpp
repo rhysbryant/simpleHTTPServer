@@ -76,19 +76,26 @@ Result Websocket::writeFrame(ServerConnection *conn, FrameType frameType,const P
 		return ERROR;
 	}
 
+	auto headerSize = (headerPtr - header);
+
 	Payload top{
 		header,
-		headerPtr - header,
+		headerSize,
 		false,
 		payload
 	};
 
 	LOCK_TCPIP_CORE();
+	if( totalPayloadSize + headerSize > conn->availableSendBuffer() ){
+		UNLOCK_TCPIP_CORE();
+		return ERROR;
+	}
+
 	auto current = &top;
 	while ( current != nullptr) {
 		if (!conn->writeData(current->data, current->size, current->byRef ? ServerConnection::WriteFlagZeroCopy : 0)) {
 			UNLOCK_TCPIP_CORE();
-			return ERROR;
+			return AvailableBufferTooSmall;
 		}
 		current = (Payload*)current->next;
 	}

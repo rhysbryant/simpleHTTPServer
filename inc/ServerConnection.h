@@ -126,6 +126,10 @@ namespace SimpleHTTP {
 			return transport && transport->getAvailableSendBuffer() > 0; // waitingForSendCompleteSize <= maxSendSize;
 		}
 
+		inline int availableSendBuffer() {
+			return  transport->getAvailableSendBuffer();
+		}
+
 		inline bool closeWithOutLocking() {
 			if(transport){
 				transport->shutdown();
