@@ -36,12 +36,13 @@ namespace SimpleHTTP
         
         static int nextFreeClientIndex();
         static int lastConnectionsInUse;
-        static int getConnectionsInUseCount();
+
         static int acceptKey(string clientKey, char *outputBuffer);
         static Result dataReceivedHandler(void *arg, uint8_t *data, uint16_t len);
         static FrameReceivedHandler frameReceivedHandler;
 
     public:
+        static int getConnectionsInUseCount();
         static const int pingInterval = 15000;
         static void process();
 

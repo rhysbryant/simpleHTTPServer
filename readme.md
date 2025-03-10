@@ -85,7 +85,17 @@ SimpleHTTP::Server::listen(80);
 //in main loop (or within a task if using RTOS)
 SimpleHTTP::Router::process();
 ```
-## Known Issues ##
+## Config File Options
 
-switching between platforms needs an options file
+an config file `simpleHTTPServer.conf.h` needs to be created a level up from this directory.
+example config follows
 
+```c
+//enable this running under freeRTOS enables use of locks
+//LWIP_TCPIP_CORE_LOCKING also seperately be enabled in your lwip config
+#define SIMPLE_HTTP_RTOS_MODE 0
+//enable support for RTSP methods (DESCRIBE,SETUP,PLAY,PAUSE,TEARDOWN)
+#define SIMPLE_HTTP_RTSP_SUPPORT 0
+//enables use of ESP_LOG_LEVEL_LOCAL
+#define SIMPLE_HTTP_ESP_LOG_SUPPORT 0
+```

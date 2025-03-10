@@ -70,7 +70,7 @@ namespace SimpleHTTP {
 			SEND,
 			DELETE,
 			OPTIONS,
-#ifdef SIMPLE_HTTP_RTSP_SUPPORT
+#if defined(SIMPLE_HTTP_RTSP_SUPPORT) && SIMPLE_HTTP_RTSP_SUPPORT == 1
 			RTSP_DESCRIBE,
 			RTSP_SETUP,
 			RTSP_PLAY,
@@ -131,7 +131,7 @@ namespace SimpleHTTP {
 		   SIMPLE_STR("SEND"),
 		   SIMPLE_STR("DELETE"),
 		   SIMPLE_STR("OPTIONS"),
-#ifdef SIMPLE_HTTP_RTSP_SUPPORT
+#if defined(SIMPLE_HTTP_RTSP_SUPPORT) && SIMPLE_HTTP_RTSP_SUPPORT == 1
 		   SIMPLE_STR("DESCRIBE"),
 		   SIMPLE_STR("SETUP"),
 		   SIMPLE_STR("PLAY"),
@@ -151,7 +151,7 @@ namespace SimpleHTTP {
 			true,
 			false,
 			false,
-#ifdef SIMPLE_HTTP_RTSP_SUPPORT
+#if defined(SIMPLE_HTTP_RTSP_SUPPORT) && SIMPLE_HTTP_RTSP_SUPPORT == 1
 			false,
 			false,
 			false,

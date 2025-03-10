@@ -38,13 +38,13 @@ namespace SimpleHTTP
 			FrameTypePong = 0xA
 		} FrameType;
 
-		typedef struct Payload {
+		struct Payload {
 			//pointer to data for send
 			const uint8_t* data;
 			//size of the data chunk
-			const uint32_t size;
+			uint32_t size;
 			//if true no copy of the data is made
-			const bool byRef;
+			bool byRef;
 			//pointer to the next chunk of frame payload
 			const Payload* next;
 		};

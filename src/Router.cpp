@@ -63,8 +63,12 @@ void Router::process()
 
 				bool connectionKeepAlive = false;
 				auto connHeader = client->currentRequest.headers["CONNECTION"];
-				if (connHeader == "keep-alive" || client->currentRequest.version == HTTPVersion::RTSP10 )
-				{
+				if (connHeader == "keep-alive" 
+				#if defined(SIMPLE_HTTP_RTSP_SUPPORT) && SIMPLE_HTTP_RTSP_SUPPORT == 1
+					//RTSP is keepalive by default
+					|| client->currentRequest.version == HTTPVersion::RTSP10
+				#endif
+				){
 					connectionKeepAlive = true;
 				}
 
