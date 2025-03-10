@@ -50,7 +50,7 @@ Result Websocket::writeFrame(ServerConnection *conn, FrameType frameType,const P
 	uint8_t header[5] = "";
 	uint8_t *headerPtr = header + 1;
 	header[0] = FlagFIN | frameType;
-	uint16_t totalPayloadSize = 0;
+	uint32_t totalPayloadSize = 0;
 
 	auto tmp = payload;
 
@@ -80,7 +80,7 @@ Result Websocket::writeFrame(ServerConnection *conn, FrameType frameType,const P
 
 	Payload top{
 		header,
-		headerSize,
+		(uint32_t)headerSize,
 		false,
 		payload
 	};
@@ -93,7 +93,7 @@ Result Websocket::writeFrame(ServerConnection *conn, FrameType frameType,const P
 
 	auto current = &top;
 	while ( current != nullptr) {
-		if (!conn->writeData(current->data, current->size, current->byRef ? ServerConnection::WriteFlagZeroCopy : 0)) {
+		if (!conn->writeData(current->data, current->size,ServerConnection::WriteFlagNoLock | (current->byRef ? ServerConnection::WriteFlagZeroCopy : 0))) {
 			UNLOCK_TCPIP_CORE();
 			return AvailableBufferTooSmall;
 		}
