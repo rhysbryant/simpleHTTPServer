@@ -63,11 +63,18 @@ namespace SimpleHTTP {
 
 
 		static const constexpr struct SimpleString statusStrings[] = {
-		   SIMPLE_STR("200 OK"),
 		   SIMPLE_STR("101 Switching Protocols"),
-		   SIMPLE_STR("404 Not Found"),
+		   SIMPLE_STR("200 OK"),
+		   SIMPLE_STR("201 Created"),
+		   SIMPLE_STR("301 Moved Permanently"),
+		   SIMPLE_STR("302 Found"),
 		   SIMPLE_STR("400 Bad Request"),
-		   SIMPLE_STR("500 Internal Server Error")
+		   SIMPLE_STR("401 Unauthorized"),
+		   SIMPLE_STR("403 Forbidden"),
+		   SIMPLE_STR("404 Not Found"),
+		   SIMPLE_STR("405 Method Not Allowed"),
+		   SIMPLE_STR("406 Not Acceptable"),
+		   SIMPLE_STR("500 Internal Server Error"),
 		};
 
 		bool headersSent;
@@ -100,14 +107,21 @@ namespace SimpleHTTP {
 
 	public:
 
-		Response(ServerConnection* conn, bool connectionKeepAlive,HTTPVersion requestVersion);
+		Response(ServerConnection* conn, bool connectionKeepAlive, HTTPVersion requestVersion);
 
 		enum Status : int {
-			Ok = 0,
 			SwitchingProtocol,
-			NotFound,
+			Ok,
+			Created,
+			MovedPermanently,
+			Found,
 			BadRequest,
-			InternalServerError
+			Unauthorized,
+			Forbidden,
+			NotFound,
+			MethodNotAllowed,
+			NotAcceptable,
+			InternalServerError,
 		};
 
 		/**
@@ -189,8 +203,8 @@ namespace SimpleHTTP {
 
 		inline ConnectionMode getConnectionMode() { return connectionMode; }
 
-		inline bool getRemoteIPAddress(char *buf, int buflen){
-			return client->getRemoteIPAddress(buf,buflen);
+		inline bool getRemoteIPAddress(char* buf, int buflen) {
+			return client->getRemoteIPAddress(buf, buflen);
 		}
 	};
 };

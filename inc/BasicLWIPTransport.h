@@ -32,12 +32,22 @@ namespace SimpleHTTP::Internal
 			return tcp_close(pcb);
 		}
 
-        int getAvailableSendBuffer() {
-            return tcp_sndbuf(pcb);
-        }
+		int getAvailableSendBuffer() {
+			return tcp_sndbuf(pcb);
+		}
 
-		inline bool getRemoteIPAddress(char *buf, int buflen){
+		inline bool getRemoteIPAddress(char* buf, int buflen) {
+#if LWIP_IPV6
+			switch (pcb->remote_ip.type) {
+			case IPADDR_TYPE_V4:
+				return ip4addr_ntoa_r(&pcb->remote_ip.u_addr.ip4, buf, buflen) != 0;
+			case IPADDR_TYPE_V6:
+				return ip6addr_ntoa_r(&pcb->remote_ip.u_addr.ip6, buf, buflen) != 0;
+			}
+#else
 			return ip4addr_ntoa_r(&pcb->remote_ip, buf, buflen) != 0;
+#endif
+			return false;
 		}
 	};
 };

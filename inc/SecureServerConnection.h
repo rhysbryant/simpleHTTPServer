@@ -90,6 +90,7 @@ namespace SimpleHTTP::Internal {
 
 		void close();
 		void closeWithoutLock();
+        bool getRemoteIPAddress(char *buf, int buflen);
 
 		Result sendCompleteCallback(int len);
 

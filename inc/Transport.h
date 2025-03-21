@@ -42,6 +42,6 @@ namespace SimpleHTTP::Internal {
 
         virtual int getAvailableSendBuffer() = 0;
 
-		virtual bool getRemoteIPAddress(char *buf, int buflen);
+		virtual bool getRemoteIPAddress(char *buf, int buflen) =0;
 	};
 }

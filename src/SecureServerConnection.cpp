@@ -340,3 +340,10 @@ void SecureServerConnection::closeWithoutLock() {
 int SecureServerConnection::getAvailableSendBuffer() {
 	return tcp_sndbuf(tpcb);
 }
+
+bool SecureServerConnection::getRemoteIPAddress(char *buf, int buflen){
+	//reuse the basic transport impl
+	BasicLWIPTransport b;
+	b.setPCB(tpcb);
+	return b.getRemoteIPAddress(buf,buflen);
+}
