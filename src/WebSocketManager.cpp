@@ -91,7 +91,7 @@ int WebsocketManager::acceptKey(string clientKey, char* outputBuffer)
 }
 
 Result WebsocketManager::dataReceivedHandler(void* arg, uint8_t* data, uint16_t len) {
-	SHTTP_LOGI(__FUNCTION__, "got dataReceivedHandler: %d bytes", len);
+	SHTTP_LOGD(__FUNCTION__, "got dataReceivedHandler: %d bytes", len);
 	auto ws = static_cast<Websocket*>(arg);
 
 	if (data == 0 && len == 0) {

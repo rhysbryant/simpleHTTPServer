@@ -67,7 +67,6 @@ err_t SecureServer::tcp_accept_cb(void* arg, struct tcp_pcb* newpcb, err_t err)
 	tcp_recv(newpcb, tcp_recv_cb);
 
 	///SHTTP_LOGI(__FUNCTION__, "connection accepted;heap free %d min seen %d", (int)esp_get_free_heap_size(), (int)esp_get_minimum_free_heap_size());
-	s->sslSessionProcess(nullptr);
 
 	return ERR_OK;
 

@@ -280,11 +280,17 @@ int SecureServerConnection::mbedtlsTCPRecvCallback(unsigned char* buf, size_t le
 
 		//mbed buffer bigger then the current pbuf loop and and try appending data from the next pbuf
 		if (pBuf->len <= len) {
-			memcpy(buf, pBuf->payload, pBuf->len);
-			readLen += pBuf->len;
-			buf += pBuf->len;
-			len -= pBuf->len;
-			pBuf->len = 0;
+			while (pBuf && len > 0) {
+				memcpy(buf, pBuf->payload, pBuf->len);
+				readLen += pBuf->len;
+				buf += pBuf->len;
+				len -= pBuf->len;
+				pBuf->len = 0;
+				pBuf = pBuf->next;
+				if (pBuf) {
+					bufTail = *pBuf;
+				}
+			}
 		}
 		else {
 			break;
@@ -341,9 +347,9 @@ int SecureServerConnection::getAvailableSendBuffer() {
 	return tcp_sndbuf(tpcb);
 }
 
-bool SecureServerConnection::getRemoteIPAddress(char *buf, int buflen){
+bool SecureServerConnection::getRemoteIPAddress(char* buf, int buflen) {
 	//reuse the basic transport impl
 	BasicLWIPTransport b;
 	b.setPCB(tpcb);
-	return b.getRemoteIPAddress(buf,buflen);
+	return b.getRemoteIPAddress(buf, buflen);
 }
