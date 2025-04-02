@@ -27,6 +27,40 @@ SimpleHTTP::Server::listen(80);
 SimpleHTTP::Router::process();
 ```
 
+## Simple with TLS ##
+
+```cpp
+#include "Server.h"
+#include "SecureServer.h"
+#include "Router.h"
+
+//add a handler
+SimpleHTTP::Router::addHandler("/", [](SimpleHTTP::Request *req, SimpleHTTP::Response *resp)
+{
+    resp->writeHeaderLine("Content-Type", "text/html");
+    resp->write("<h1>Hello World</h1>");
+});
+//open port (may need to wait for the network to be up)
+SimpleHTTP::Server::listen(80);
+
+
+SimpleHTTP::SecureServer::loadCert(&certstring);
+SimpleHTTP::SecureServer::loadPrivateKey(&privatekeyString);
+
+
+auto initResult = SimpleHTTP::SecureServer::TLSInit();
+if (initResult != 0)
+{
+    ESP_LOGE(__FUNCTION__, "TLSInit: failed with %s", mbedtls_high_level_strerr(initResult));
+}
+
+SimpleHTTP::SecureServer::listen(443);
+
+
+//in main loop (or within a task if using RTOS)
+SimpleHTTP::Router::process();
+```
+
 ## Websocket ##
 
 
