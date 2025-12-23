@@ -21,11 +21,15 @@
 extern "C"{
 #include "lwip/tcp.h"
 }
+#include "common.h"
 
 namespace SimpleHTTP{
     class Server{
-
+        private:
 			static struct tcp_pcb* tcpServer;
+            #if defined(SIMPLE_HTTP_RTOS_MODE) && SIMPLE_HTTP_RTOS_MODE == 1
+            static SemaphoreHandle_t dataReceivedSem;
+            #endif
 
             static err_t tcp_sent_cb(void* arg, struct tcp_pcb* tpcb, u16_t len);
             static err_t tcp_recv_cb(void* arg, struct tcp_pcb* tpcb, struct pbuf* p, err_t err);
@@ -33,6 +37,7 @@ namespace SimpleHTTP{
             static void tcp_err_cb(void* arg, err_t err);
 
         public:
+            static void waitOnData();
             static void listen(int port);
 
     };

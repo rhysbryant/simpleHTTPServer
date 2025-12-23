@@ -20,16 +20,19 @@
 #include "Server.h"
 #include "Router.h"
 #include <queue>
+#if defined(SIMPLE_HTTP_RTOS_MODE) && SIMPLE_HTTP_RTOS_MODE == 1
+#include <freertos/semphr.h>
+#endif
 
 
 using namespace SimpleHTTP;
 
 
-err_t Server::tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
+err_t Server::tcp_accept_cb(void* arg, struct tcp_pcb* newpcb, err_t err)
 {
 
 	auto conn = Router::getFreeConnection();
-	if( conn == 0 ){
+	if (conn == 0) {
 		tcp_abort(newpcb);
 		return ERR_ABRT;
 	}
@@ -40,15 +43,15 @@ err_t Server::tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
 	tcp_recv(newpcb, tcp_recv_cb);
 	conn->init(newpcb);
 	return ERR_OK;
-	
+
 }
 
-err_t Server::tcp_recv_cb(void *arg, struct tcp_pcb *tpcb, struct pbuf *p,
-						  err_t err)
+err_t Server::tcp_recv_cb(void* arg, struct tcp_pcb* tpcb, struct pbuf* p,
+	err_t err)
 {
 	if (arg != 0)
 	{
-		ServerConnection *conn = (ServerConnection *)arg;
+		ServerConnection* conn = (ServerConnection*)arg;
 		if (p == 0)
 		{
 			conn->closeWithOutLocking();
@@ -59,23 +62,30 @@ err_t Server::tcp_recv_cb(void *arg, struct tcp_pcb *tpcb, struct pbuf *p,
 		if (conn->dataReceived)
 		{
 			auto pack = p;
-			while(pack){
-				conn->dataReceived(conn->dataReceivedArg, (uint8_t *)pack->payload, pack->len);
+			while (pack) {
+				conn->dataReceived(conn->dataReceivedArg, (uint8_t*)pack->payload, pack->len);
 				pack = p->next;
 			}
 		}
 		else
 		{
 			// default to HTTP/1.1 request
-			auto result = conn->currentRequest.parse((char *)p->payload, p->len);
+			auto result = conn->currentRequest.parse((char*)p->payload, p->len);
 			if (result == ERROR)
 			{
 				conn->closeWithOutLocking();
+				SHTTP_LOGE(__FUNCTION__, "Failed to parse request, closing connection");
 			}
 		}
 
 		tcp_recved(tpcb, p->len);
 		pbuf_free(p);
+#if	defined(SIMPLE_HTTP_RTOS_MODE) && SIMPLE_HTTP_RTOS_MODE == 1
+		// Signal the semaphore to unblock waitOnData()
+		if (dataReceivedSem != nullptr) {
+			xSemaphoreGive(dataReceivedSem);
+		}
+#endif
 		err_t result = ERR_OK; // conn->recv_cb(p, err);
 		return result;
 	}
@@ -83,32 +93,32 @@ err_t Server::tcp_recv_cb(void *arg, struct tcp_pcb *tpcb, struct pbuf *p,
 	return ERR_OK;
 }
 
-err_t Server::tcp_sent_cb(void *arg, struct tcp_pcb *tpcb, u16_t len)
+err_t Server::tcp_sent_cb(void* arg, struct tcp_pcb* tpcb, u16_t len)
 {
 	if (arg != 0)
 	{
-		ServerConnection *conn = (ServerConnection *)arg;
+		ServerConnection* conn = (ServerConnection*)arg;
+
+		conn->sendCompleteCallback(len);
 
 		if (conn->closeOnceSent)
 		{
-			conn->closeOnceSent -= len;
-			if (!conn->closeOnceSent)
+			if (!conn->closeOnceSent && !conn->waitingForSendComplete())
 			{
 				conn->closeWithOutLocking();
 			}
 		}
 
-		conn->sendCompleteCallback(len);
 	}
 
 	return ERR_OK;
 }
 
-void Server::tcp_err_cb(void *arg, err_t err)
+void Server::tcp_err_cb(void* arg, err_t err)
 {
 	if (arg != 0)
 	{
-		ServerConnection *conn = (ServerConnection *)arg;
+		ServerConnection* conn = (ServerConnection*)arg;
 		if (conn->sessionArg != 0 && conn->sessionArgFreeHandler != 0)
 		{
 			conn->sessionArgFreeHandler(conn->sessionArg);
@@ -122,11 +132,26 @@ void Server::tcp_err_cb(void *arg, err_t err)
 void Server::listen(int port)
 {
 
-	struct tcp_pcb *tmp = tcp_new();
+	struct tcp_pcb* tmp = tcp_new();
 	tcp_bind(tmp, IP4_ADDR_ANY, port);
 	tcpServer = tcp_listen(tmp);
 	tcp_accept(tcpServer, tcp_accept_cb);
 	return;
 }
 
-struct tcp_pcb *Server::tcpServer = 0;
+
+void Server::waitOnData() {
+	SHTTP_LOGD("Server", "Waiting for data...");
+#if defined(SIMPLE_HTTP_RTOS_MODE) && SIMPLE_HTTP_RTOS_MODE == 1
+	if (dataReceivedSem == nullptr) {
+		return;
+	}
+
+	// Block until tcp_recv_cb is next called
+	xSemaphoreTake(dataReceivedSem, pdMS_TO_TICKS(1000));
+
+#endif
+}
+
+struct tcp_pcb* Server::tcpServer = 0;
+SemaphoreHandle_t Server::dataReceivedSem = xSemaphoreCreateBinary();
