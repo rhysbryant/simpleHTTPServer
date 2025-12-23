@@ -19,6 +19,7 @@
  */
 #include "Server.h"
 #include "Router.h"
+#include "log.h"
 #include <queue>
 #if defined(SIMPLE_HTTP_RTOS_MODE) && SIMPLE_HTTP_RTOS_MODE == 1
 #include <freertos/semphr.h>
@@ -154,4 +155,6 @@ void Server::waitOnData() {
 }
 
 struct tcp_pcb* Server::tcpServer = 0;
+#if defined(SIMPLE_HTTP_RTOS_MODE) && SIMPLE_HTTP_RTOS_MODE == 1
 SemaphoreHandle_t Server::dataReceivedSem = xSemaphoreCreateBinary();
+#endif
