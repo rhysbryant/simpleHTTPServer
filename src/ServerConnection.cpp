@@ -18,6 +18,7 @@
  *   along with SimpleHTTP.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "ServerConnection.h"
+#include "log.h"
 
 using namespace SimpleHTTP;
 
@@ -31,6 +32,7 @@ ServerConnection::ServerConnection() {
 
 void ServerConnection::init(struct tcp_pcb* client) {
 
+	forceNoLocking = false;
 	hijacted = false;
 	closeOnceSent = 0;
 	waitingForSendCompleteSize = 0;
@@ -40,9 +42,6 @@ void ServerConnection::init(struct tcp_pcb* client) {
 	dataReceived = parseRequest;
 	dataReceivedArg = this;
 
-	while (!sendQueue.empty()) {
-		sendQueue.pop();
-	}
 
 	sessionArg = 0;
 	sessionArgFreeHandler = 0;
@@ -53,6 +52,14 @@ void ServerConnection::init(struct tcp_pcb* client) {
 	}
 	else {
 		this->transport = 0;
+	}
+
+	while (!sendQueue.empty()) {
+		auto& p = sendQueue.front();
+		if (p.type == ChunkForSend::CallBackPtr) {
+			p.getMoreData(this, (void*)p.arg);
+		}
+		sendQueue.pop();
 	}
 }
 
@@ -83,16 +90,17 @@ bool ServerConnection::writeData(const uint8_t* data, int len, int writeFlags) {
 	if (!isConnected()) {
 		return false;
 	}
-	int apiFlags = (writeFlags & Transport::WriteFlagZeroCopy) ? 0 : TCP_WRITE_FLAG_COPY;
+	int apiFlags = writeFlags;//(writeFlags & Transport::WriteFlagZeroCopy) ? 0 : TCP_WRITE_FLAG_COPY;
 	bool locked = false;
-	if ((writeFlags & Transport::WriteFlagNoLock) == 0) {
+	if (!forceNoLocking && (writeFlags & Transport::WriteFlagNoLock) == 0) {
 		LOCK_TCPIP_CORE();
 		locked = true;
 	}
 
-	if (sendQueue.empty() || apiFlags != 0) {
+	//the queue only supports zero copy
+	if (sendQueue.empty() || !(apiFlags & Transport::WriteFlagZeroCopy)) {
 		//try to directly send the first chunk
-		int size = len > maxSendSize && apiFlags == 0 ? maxSendSize : len;
+		int size = len > maxSendSize && apiFlags & Transport::WriteFlagZeroCopy ? maxSendSize : len;
 		int dataLengthWritten = 0;
 
 
@@ -112,7 +120,7 @@ bool ServerConnection::writeData(const uint8_t* data, int len, int writeFlags) {
 	}
 	//queueChunks:
 
-	if ((apiFlags == 0 && len > 0)) {
+	if (((apiFlags & Transport::WriteFlagZeroCopy) && len > 0)) {
 		//put any remaining data on the queue
 		int toSend = len;
 		const uint8_t* dataToSend = data;
@@ -120,8 +128,9 @@ bool ServerConnection::writeData(const uint8_t* data, int len, int writeFlags) {
 			uint16_t size = toSend < maxSendSize ? toSend : maxSendSize;
 
 			ChunkForSend c{
-				dataToSend,
-				size
+				.type = ChunkForSend::DataPtr,
+				.data = dataToSend,
+				.size = size
 			};
 
 			sendQueue.push(c);
@@ -141,12 +150,53 @@ bool ServerConnection::writeData(const uint8_t* data, int len, int writeFlags) {
 
 }
 
+void ServerConnection::queueResponseWriteCallback(MoreDataCallback callback, void* arg) {
+	ChunkForSend c{
+		.type = ChunkForSend::CallBackPtr,
+		.getMoreData = callback,
+		.arg = arg
+	};
+	LOCK_TCPIP_CORE();
+	auto empty = sendQueue.empty();
+	sendQueue.push(c);
+	//trigger the inital queue processing if it was empty
+	if (empty) {
+
+		sendNextFromQueue();
+
+	}
+	UNLOCK_TCPIP_CORE();
+}
+
 bool ServerConnection::sendNextFromQueue() {
 
 	ChunkForSend c = sendQueue.front();
-	int dataWritten = transport->write((uint8_t*)c.data, c.size, 0);
+
+	int dataWritten = 0;
+	switch (c.type) {
+	case ChunkForSend::DataPtr:
+		dataWritten = transport->write((uint8_t*)c.data, c.size, WriteFlagZeroCopy);
+		break;
+	case ChunkForSend::CallBackPtr:
+	{
+		//get more data will likely have made calls to write() so need to ensure
+		//if the chunk is to be re-queued it's placed at the back
+		sendQueue.pop();
+		forceNoLocking = true;
+		auto done = c.getMoreData(this, (void*)c.arg);
+		forceNoLocking = false;
+		if (!done) {
+			sendQueue.push(c);
+		}
+		goto skipPop;
+	}
+	break;
+	}
+
+
 	if (dataWritten >= 0) {
 		sendQueue.pop();
+	skipPop:
 		waitingForSendCompleteSize += dataWritten;
 		//auto err = tcp_output(client);
 		return true;
@@ -158,8 +208,11 @@ bool ServerConnection::sendNextFromQueue() {
 
 Result ServerConnection::sendCompleteCallback(int length) {
 	//we are in lwip context here don't lock here (it's expected this is called from tcp_sent_cb)
-	if (waitingForSendCompleteSize) {
-		waitingForSendCompleteSize -= length;
+	//SHTTP_LOGI(__FUNCTION__,"waiting on size %d, buffer %d",waitingForSendCompleteSize,(int)transport->getAvailableSendBuffer());
+	if (waitingForSendCompleteSize || !sendQueue.empty()) {
+		if (waitingForSendCompleteSize) {
+			waitingForSendCompleteSize -= length;
+		}
 		if (hasAvailableSendBuffer()) {
 			if (!sendQueue.empty()) {
 				if (!sendNextFromQueue()) {

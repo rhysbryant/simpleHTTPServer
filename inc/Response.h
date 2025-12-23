@@ -33,7 +33,19 @@ namespace SimpleHTTP {
 			ConnectionUpgrade,
 			ConnectionClose
 		};
+
+		enum ConnectionStatus {
+			ConnectionStatusConnected,
+			ConnectionStatusClosed
+		};
+
+		typedef bool (*ReadyForSendCallback) (Response* resp, void* arg);
 	private:
+		typedef struct {
+			Response* resp;
+			ReadyForSendCallback readyForSendCallback;
+			void* arg;
+		} WriteCallback;
 		//End of line char sequence
 		static const constexpr char EOL[] = { '\r','\n' };
 
@@ -48,8 +60,9 @@ namespace SimpleHTTP {
 		char* responseBufferPos;
 		const char* responseBufferEnd = responseBuffer + responseBufferSize;
 		int responseSizeTotal;
+		bool isAsync;
 
-		Result networkWrite(char* data, int length);
+		Result networkWrite(char* data, int length, bool flush);
 
 		static const constexpr struct SimpleString VersionString = SIMPLE_STR("HTTP/1.1 ");
 		static const constexpr struct SimpleString ChunckedTransferHeader = SIMPLE_STR("Transfer-Encoding: chunked");
@@ -85,7 +98,7 @@ namespace SimpleHTTP {
 
 		ServerConnection* client;
 
-		Result flush(bool finalize);
+		Result flush(bool finalize, bool flushNetworkBuffer);
 		/**
 		 * writes the default status if no status has been written yet
 		 */
@@ -105,9 +118,13 @@ namespace SimpleHTTP {
 
 		bool appendBody(const char* body, int size);
 
+		static bool writeReadyCallback(ServerConnection* connection, void* arg);
+
 	public:
 
 		Response(ServerConnection* conn, bool connectionKeepAlive, HTTPVersion requestVersion);
+
+		Response(const Response* response);
 
 		enum Status : int {
 			SwitchingProtocol,
@@ -162,6 +179,25 @@ namespace SimpleHTTP {
 		**/
 		int write(const char* data);
 		/**
+		* this adds a callback to the send queue
+		* when there is available buffer the the callback will be invoked
+		* to write for data
+
+		* this method flushes the current buffer
+
+		* the callback will be called again as buffer space becomes
+		* available until true is returned from the callback
+		*
+		* the callback will be called if the connection is lost
+		* the check response->getConnectionStatus() == Response::ConnectionStatusClosed
+		*
+		* the callback will be called off the back of the successful send of data
+		* if no data is written within the callback done is implicitly true
+		* and the response finalized
+		**/
+		void write(ReadyForSendCallback callback, void* arg);
+
+		/**
 		 * writes directly to the network without buffering
 		 * this method flushes the buffer before it's starts writing
 		 *
@@ -174,8 +210,9 @@ namespace SimpleHTTP {
 		Result flush();
 		/**
 		* in the case of chunked transfer encoding sends the final chunk and the no more chunks marker
+		* if the body write is not async if write(callback()) was used this behaves the same as flush()
 		**/
-		inline int finalize() { return flush(true); }
+		inline int finalize() { return isAsync ? 0 : flush(true, false); }
 		/**
 		 * returns the underlying server connection object and flags the connection as hijacked this means it stops parsing the incoming data as a http request
 		 */
@@ -193,6 +230,17 @@ namespace SimpleHTTP {
 		* called if SessionArg is non 0 and the connection is closed or disposed of
 		*/
 		void setSessionArgFreeHandler(ServerConnection::SessionArgFree h) { client->sessionArgFreeHandler = h; }
+
+		/**
+		 * returns the client connection status
+		 */
+
+		inline ConnectionStatus getConnectionStatus() {
+			if (client->isConnected()) {
+				return ConnectionStatusConnected;
+			}
+			return ConnectionStatusClosed;
+		}
 
 		/**
 		 * returns the count of bytes sent

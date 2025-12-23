@@ -52,14 +52,28 @@ namespace SimpleHTTP {
 		// allow writeData calls with a size larger then the IP stacks sent buffer
 		// by using a queue
 
+		typedef bool (*MoreDataCallback) (ServerConnection* connection,void* arg);
+
 		struct ChunkForSend {
-			const uint8_t* data;
-			const uint16_t size;
+			enum Type: uint8_t {
+				DataPtr,
+				CallBackPtr
+			} type;
+			union {
+				const uint8_t* data;
+				const MoreDataCallback getMoreData;
+			};
+			union {
+				const void* arg;
+				const uint32_t size;
+			};
 		};
 		LinkedListQueue<ChunkForSend> sendQueue;
 
 		//current chuck size in flight
 		int waitingForSendCompleteSize;
+
+		bool forceNoLocking;
 
 		bool sendNextFromQueue();
 
@@ -122,12 +136,21 @@ namespace SimpleHTTP {
 
 		bool writeData(const uint8_t* data, int len, int writeFlags);
 
+		void queueResponseWriteCallback(MoreDataCallback callback, void* arg);
+
 		inline bool  hasAvailableSendBuffer() {
 			return transport && transport->getAvailableSendBuffer() > 0; // waitingForSendCompleteSize <= maxSendSize;
 		}
 
 		inline int availableSendBuffer() {
 			return  transport->getAvailableSendBuffer();
+		}
+
+		/**
+		 * retyurns true if there is data waiting to be sent/acknowledged
+		 */
+		inline bool waitingForSendComplete() {
+			return waitingForSendCompleteSize > 0;
 		}
 
 		inline bool closeWithOutLocking() {
