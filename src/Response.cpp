@@ -278,18 +278,19 @@ bool Response::writeHeaderLine(const SimpleString str)
 	return writeHeaderLine(str.value, str.size);
 }
 
-void Response::addContentLengthHeader(int length)
+bool Response::addContentLengthHeader(int length)
 {
 	ensureStatusWritten();
 
-	memcpy(responseHeaderBufferPos, ContentLengthHeader.value, ContentLengthHeader.size);
-	responseHeaderBufferPos += ContentLengthHeader.size;
+	char tmp[10];
+	auto lengthSize = Utility::toASCII(length, tmp, Utility::DecBase, sizeof(tmp));
 
-	auto lengthSize = Utility::toASCII(length, responseHeaderBufferPos, Utility::DecBase, 10);
-	responseHeaderBufferPos += lengthSize;
-
-	memcpy(responseHeaderBufferPos, EOL, sizeof(EOL));
-	responseHeaderBufferPos += sizeof(EOL);
+	auto result = appendHeaders(ContentLengthHeader.value, ContentLengthHeader.size)
+	&& appendHeaders(tmp, lengthSize)
+	&& appendHeadersEOL();
+	if(!result){
+		return false;
+	}
 
 	chunkedEncoding = false;
 }

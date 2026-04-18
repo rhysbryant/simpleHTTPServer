@@ -145,7 +145,7 @@ namespace SimpleHTTP {
 		 * adds a content length header to the buffer
 		 * don't call this more then once
 		 */
-		void addContentLengthHeader(int length);
+		bool addContentLengthHeader(int length);
 		/*
 		 * writes a response header line to the buffer
 		 * calls to this method after the headers have already been sent are ignored
