@@ -307,7 +307,7 @@ Result Request::readBody(char* dstBuffer, int* dstBufferSize) {
 		resetBuffer();
 	}
 
-	bufferReadPos = requestBufferEnd - requestBufferReadPos;
+	bufferReadPos = requestBufferReadPos - requestBuffer.data();
 
 	if (bodyLength == 0) {
 		bodyReadInProgress = false;
