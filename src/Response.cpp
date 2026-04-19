@@ -293,6 +293,8 @@ bool Response::addContentLengthHeader(int length)
 	}
 
 	chunkedEncoding = false;
+
+	return true;
 }
 
 bool Response::writeHeaderLine(const char* name, int size)
