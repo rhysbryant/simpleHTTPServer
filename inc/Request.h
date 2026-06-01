@@ -187,7 +187,8 @@ namespace SimpleHTTP {
 		**/
 		SimpleString nextEOL(SimpleString line, char** eolEndPosPtr);
 		/**
-		* returns true if the next line is blank
+		* if `line` begins with a line terminator, returns its length: 2 for CRLF,
+		* or 1 for a bare LF (tolerated per RFC 7230 3.5). Returns 0 otherwise.
 		*/
 		int isEOL(SimpleString line);
 		/**

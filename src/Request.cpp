@@ -20,6 +20,15 @@
 #include "Request.h"
 #include <string.h>
 #include <ctype.h>
+
+#if !defined(LWIP_TCPIP_CORE_LOCKING) || LWIP_TCPIP_CORE_LOCKING == 0
+#define LOCK_TCPIP_CORE()
+#define UNLOCK_TCPIP_CORE()
+#else
+#include "lwip/sys.h"
+#include "lwip/tcpip.h"
+#endif
+
 using namespace SimpleHTTP;
 
 Request::Request() {
@@ -86,6 +95,12 @@ Result Request::parse(char* data, int length) {
 		int contentLength = 0;
 		char* start = data;
 		while (true) {
+			// a blank line marks the end of the headers. This MUST be checked before
+			// parseHeaderLine(), which scans for ':' and would otherwise run past the
+			// blank line into the body
+			if (isEOL({ data,(int)(dataEndPtr - data) })) {
+				break;
+			}
 			auto header = parseHeaderLine({ data,(int)(dataEndPtr - data) }, &data);
 			if (header.name.size == 0) {
 				break;
@@ -224,15 +239,13 @@ SimpleString Request::nextEOL(SimpleString line, char** eolEndPosPtr) {
 }
 
 int Request::isEOL(SimpleString line) {
-	if (line.size >= 2) {
-		if (memcmp(line.value, "\r\n", 2) == 0) {
-			return 2;
-		}
+	// CRLF (the spec-compliant terminator)
+	if (line.size >= 2 && line.value[0] == '\r' && line.value[1] == '\n') {
+		return 2;
 	}
-	else if (line.size >= 1) {
-		if (memcmp(line.value, "\n", 1) == 0) {
-			return 1;
-		}
+	// bare LF, even when more data follows - tolerated per RFC 7230 3.5
+	if (line.size >= 1 && line.value[0] == '\n') {
+		return 1;
 	}
 	return 0;
 }
@@ -252,6 +265,9 @@ Result Request::readBody(char* dstBuffer, int* dstBufferSize) {
 	bool atEndOfBuffer = false;
 	bodyReadInProgress = true;
 
+	// serialise with parse()/appendToBuffer() running on the tcpip thread
+	LOCK_TCPIP_CORE();
+
 	char* requestBufferReadPos = &requestBuffer[bufferReadPos];
 	const char* requestBufferEnd = requestBuffer.data() + requestBuffer.size();
 
@@ -259,11 +275,13 @@ Result Request::readBody(char* dstBuffer, int* dstBufferSize) {
 
 	if (bodyLength == 0) {
 		if (!bodyEncodingChunked) {
+			UNLOCK_TCPIP_CORE();
 			return ERROR;
 		}
 	tryReadNextChunk:
 		auto strChunkSize = nextEOL({ requestBufferReadPos,(int)(requestBuffer.size()) }, &requestBufferReadPos);
 		if (strChunkSize.value == nullptr) {
+			UNLOCK_TCPIP_CORE();
 			return MoreData;
 		}
 
@@ -273,6 +291,7 @@ Result Request::readBody(char* dstBuffer, int* dstBufferSize) {
 			lastBodyOutputBytesWritten = outputBytesWritten;
 			bodyReadInProgress = false;
 			bufferReadPos = requestBufferEnd - requestBufferReadPos;
+			UNLOCK_TCPIP_CORE();
 			return OK;
 		}
 	}
@@ -306,8 +325,11 @@ Result Request::readBody(char* dstBuffer, int* dstBufferSize) {
 	if (atEndOfBuffer) {
 		resetBuffer();
 	}
+	else {
+		bufferReadPos = requestBufferReadPos - requestBuffer.data();
+	}
 
-	bufferReadPos = requestBufferReadPos - requestBuffer.data();
+	UNLOCK_TCPIP_CORE();
 
 	if (bodyLength == 0) {
 		bodyReadInProgress = false;

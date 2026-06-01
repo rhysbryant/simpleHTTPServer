@@ -107,6 +107,59 @@ TEST(Request, fullRequestPOSTFullBodyContentLength) {
 	char expectedText[] = "Test";
 	GTEST_ASSERT_EQ(str, expectedText);
 }
+// regression: a body containing ':' followed by a newline must not be mis-parsed
+// as headers. The end-of-headers blank line has to be detected before scanning for
+// ':', otherwise parse runs past the blank line into the body, never finishes the
+// headers, stays in WaitingHeaders and the request is never dispatched.
+// (This is why a browser upload of a multi-line file hung while curl -d - which
+// strips newlines - worked.)
+TEST(Request, fullRequestPUTBodyWithColonAndNewline) {
+	Request r;
+	const char body[] = "name: x\nmore";   // ':' then '\n' inside the body (12 bytes)
+	string req("PUT /up HTTP/1.1\r\nHost: h\r\nContent-Length: 12\r\n\r\n");
+	req += body;
+	auto result = r.parse((char*)req.c_str(), req.length());
+	GTEST_ASSERT_EQ(result, Result::MoreData);
+
+	GTEST_ASSERT_EQ(r.method, Request::PUT);
+	GTEST_ASSERT_EQ(r.path, "/up");
+	GTEST_ASSERT_EQ(r.getBodyLength(), 12);
+	// must be ready to dispatch (reached WaitingBody); the bug left it in WaitingHeaders
+	GTEST_ASSERT_EQ(r.getAndClearForProcessing(), true);
+
+	char buffer[64] = "";
+	int size = sizeof(buffer);
+	auto bodyReadResult = r.readBody(buffer, &size);
+	GTEST_ASSERT_EQ(bodyReadResult, Result::OK);
+	GTEST_ASSERT_EQ(string(buffer, size), string(body));
+}
+
+// regression: a body spanning multiple packets must reassemble. parse() is called
+// per segment and readBody() drains between segments (as the server does per TCP
+// segment). The buggy readBody left a stale bufferReadPos after resetBuffer(), so
+// bytes were skipped and the body never completed -> the upload looped forever.
+TEST(Request, multiPacketBodyReassembles) {
+	Request r;
+	string headers("PUT /up HTTP/1.1\r\nHost: h\r\nContent-Length: 20\r\n\r\n");
+	string body = "ABCDEFGHIJKLMNOPQRST"; // 20 bytes
+	string p1 = headers + body.substr(0, 7);
+	string p2 = body.substr(7, 6);
+	string p3 = body.substr(13);
+	string got;
+	char buf[64];
+	int s;
+
+	r.parse((char*)p1.c_str(), p1.size());
+	s = sizeof(buf); r.readBody(buf, &s); got.append(buf, s);
+	r.parse((char*)p2.c_str(), p2.size());
+	s = sizeof(buf); r.readBody(buf, &s); got.append(buf, s);
+	r.parse((char*)p3.c_str(), p3.size());
+	s = sizeof(buf); auto br = r.readBody(buf, &s); got.append(buf, s);
+
+	GTEST_ASSERT_EQ(br, Result::OK);
+	GTEST_ASSERT_EQ(got, body);
+}
+
 //one parse call consumes the full payload
 TEST(Request, fullRequestPOSTFullBodyChunked) {
 	Request r;
