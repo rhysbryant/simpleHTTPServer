@@ -15,7 +15,9 @@ namespace SimpleHTTP::Internal
 
 		inline int write(const void* dataptr, u16_t len, uint8_t apiflags)
 		{
-			auto err = tcp_write(pcb, (uint8_t*)dataptr, len, apiflags);
+			// translate SimpleHTTP write flags into lwip tcp_write flags
+			uint8_t lwipFlags = (apiflags & WriteFlagZeroCopy) ? 0 : TCP_WRITE_FLAG_COPY;
+			auto err = tcp_write(pcb, (uint8_t*)dataptr, len, lwipFlags);
 			if (err != ERR_OK) {
 				return err;
 			}
