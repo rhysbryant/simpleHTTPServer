@@ -179,23 +179,40 @@ void WebsocketManager::process() {
 				}
 
 			}
-			else if (false || os_getUnixTime() - ws->lastPingSent > 15000) {
-				SHTTP_LOGD(__FUNCTION__, "ws check");
-				if ((ws->lastPongReceived != 0 && os_getUnixTime() - ws->lastPongReceived > 60000) || (ws->lastPongReceived == 0 && os_getUnixTime() - ws->getConnection()->lastRequestTime > 60000)) {
-					SHTTP_LOGE(__FUNCTION__, "ws close no pong");
-					ws->getConnection()->close();
-					return;
+			else if (os_getUnixTime() - ws->lastPingSent > 15000) {
+				// capture conn once: another thread may unAssign() (conn = nullptr)
+				// between the isInUse() check above and here
+				auto conn = ws->getConnection();
+				if (conn == nullptr) {
+					continue;
 				}
-				SHTTP_LOGD(__FUNCTION__, "pinging connect %d", i);
-				if (ws->writeFrame(Websocket::FrameTypePing, nullptr) == ERROR) {
-					SHTTP_LOGE(__FUNCTION__, "closing due to ping error");
-					ws->getConnection()->close();
+
+				// If the TCP layer has ACKed data recently the remote is provably
+				// reachable — pong absence just means the browser's reply was queued
+				// behind outbound data frames. Suppress the pong-timeout close while
+				// ACKs are flowing, but still let the ping/pong exchange proceed.
+				bool recentAck = conn->lastSendCompleteTime != 0 &&
+				                 os_getUnixTime() - conn->lastSendCompleteTime < 30000;
+
+				if (!recentAck) {
+					if ((ws->lastPongReceived != 0 && os_getUnixTime() - ws->lastPongReceived > 60000) ||
+					    (ws->lastPongReceived == 0 && os_getUnixTime() - conn->lastRequestTime > 60000)) {
+						SHTTP_LOGE(__FUNCTION__, "ws close no pong");
+						conn->close();
+						return;
+					}
 				}
-				ws->lastPingSent = os_getUnixTime();
-			}
-			else if (ws->lastPongReceived != 0 && os_getUnixTime() - ws->lastPingSent > 30000 && !ws->isCloseRequestedByServer()) {
-				SHTTP_LOGE(__FUNCTION__, "pong timeout %d %d", (int)ws->lastPingSent, (int)ws->lastPongReceived);
-				ws->sendCloseFrame(66);
+
+				// Only advance lastPingSent when the frame actually goes out. A full
+				// send buffer returns ERROR ("busy", not "dead") — leaving lastPingSent
+				// unchanged causes a retry on the next process() tick rather than a
+				// 15 s stall, and we never close just because a write was deferred.
+				SHTTP_LOGD(__FUNCTION__, "pinging connection %d", i);
+				if (ws->writeFrame(Websocket::FrameTypePing, nullptr) == OK) {
+					ws->lastPingSent = os_getUnixTime();
+				} else {
+					SHTTP_LOGD(__FUNCTION__, "ping deferred (send buffer busy)");
+				}
 			}
 		}
 	}
