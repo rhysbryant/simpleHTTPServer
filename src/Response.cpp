@@ -381,7 +381,7 @@ Result Response::flush(bool finalise, bool flushNetworkBuffer)
 		}
 
 		// the last chunk must always have a 0 length
-		if (chunkSize > 0 && finalise)
+		if (finalise)
 		{
 			write("0\r\n\r\n", 5);
 		}
