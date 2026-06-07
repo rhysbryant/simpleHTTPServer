@@ -82,7 +82,10 @@ Result ServerConnection::parseRequest(void* arg, uint8_t* data, uint16_t len) {
 	auto conn = static_cast<ServerConnection*>(arg);
 	auto result = conn->currentRequest.parse((char*)data, len);
 	if (result == ERROR) {
-		conn->close();
+		// parseRequest runs in the lwip recv callback (tcpip thread, core lock
+		// already held); the locking close() would re-take LOCK_TCPIP_CORE and
+		// deadlock the whole stack, so use the no-lock variant
+		conn->closeWithOutLocking();
 		return ERROR;
 	}
 
