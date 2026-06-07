@@ -28,6 +28,7 @@
 
 using namespace SimpleHTTP;
 
+void (*Server::sendCompleteNotify)() = nullptr;
 
 err_t Server::tcp_accept_cb(void* arg, struct tcp_pcb* newpcb, err_t err)
 {
@@ -42,9 +43,26 @@ err_t Server::tcp_accept_cb(void* arg, struct tcp_pcb* newpcb, err_t err)
 	tcp_err(newpcb, tcp_err_cb);
 	tcp_sent(newpcb, tcp_sent_cb);
 	tcp_recv(newpcb, tcp_recv_cb);
+	// periodic, ACK-independent trigger so a send queue stalled by a transient
+	// tcp_write failure still recovers (interval is in ~500ms coarse-timer ticks)
+	tcp_poll(newpcb, tcp_poll_cb, 2);
 	conn->init(newpcb);
 	return ERR_OK;
 
+}
+
+err_t Server::tcp_poll_cb(void* arg, struct tcp_pcb* tpcb)
+{
+	if (arg != 0)
+	{
+		ServerConnection* conn = (ServerConnection*)arg;
+		conn->pumpSendQueue();
+		if (conn->closeOnceSent && !conn->waitingForSendComplete())
+		{
+			conn->closeWithOutLocking();
+		}
+	}
+	return ERR_OK;
 }
 
 err_t Server::tcp_recv_cb(void* arg, struct tcp_pcb* tpcb, struct pbuf* p,
@@ -65,21 +83,16 @@ err_t Server::tcp_recv_cb(void* arg, struct tcp_pcb* tpcb, struct pbuf* p,
 			auto pack = p;
 			while (pack) {
 				conn->dataReceived(conn->dataReceivedArg, (uint8_t*)pack->payload, pack->len);
-				pack = p->next;
+				pack = pack->next;
 			}
 		}
 		else
 		{
-			// default to HTTP/1.1 request
-			auto result = conn->currentRequest.parse((char*)p->payload, p->len);
-			if (result == ERROR)
-			{
-				conn->closeWithOutLocking();
-				SHTTP_LOGE(__FUNCTION__, "Failed to parse request, closing connection");
-			}
+			// dataReceived is always set in init() - reaching here is a bug
+			SHTTP_LOGE(__FUNCTION__, "dataReceived null - connection not initialised");
 		}
 
-		tcp_recved(tpcb, p->len);
+		tcp_recved(tpcb, p->tot_len);
 		pbuf_free(p);
 #if	defined(SIMPLE_HTTP_RTOS_MODE) && SIMPLE_HTTP_RTOS_MODE == 1
 		// Signal the semaphore to unblock waitOnData()
@@ -102,12 +115,13 @@ err_t Server::tcp_sent_cb(void* arg, struct tcp_pcb* tpcb, u16_t len)
 
 		conn->sendCompleteCallback(len);
 
-		if (conn->closeOnceSent)
+		if (sendCompleteNotify != nullptr) {
+			sendCompleteNotify();
+		}
+
+		if (conn->closeOnceSent && !conn->waitingForSendComplete())
 		{
-			if (!conn->closeOnceSent && !conn->waitingForSendComplete())
-			{
-				conn->closeWithOutLocking();
-			}
+			conn->closeWithOutLocking();
 		}
 
 	}

@@ -133,6 +133,15 @@ namespace SimpleHTTP {
 		**/
 		Result sendCompleteCallback(int length);
 
+		/**
+		 * ACK-independent retry of a stalled send queue. Safe to call anytime
+		 * (no-op when the queue is empty or the send buffer is full); does not
+		 * touch send accounting. Intended to be driven from a tcp_poll callback
+		 * so a queue stalled by a transient tcp_write failure (with no in-flight
+		 * data left to trigger tcp_sent_cb) still recovers.
+		 */
+		void pumpSendQueue();
+
 		/*
 		for backwards compatibility alias the flags here
 		*/
@@ -159,7 +168,8 @@ namespace SimpleHTTP {
 		}
 
 		inline int availableSendBuffer() {
-			return  transport->getAvailableSendBuffer();
+			// transport may be null if the connection was closed concurrently
+			return transport ? transport->getAvailableSendBuffer() : 0;
 		}
 
 		/**

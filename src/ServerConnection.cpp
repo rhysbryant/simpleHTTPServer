@@ -18,6 +18,7 @@
  *   along with SimpleHTTP.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "ServerConnection.h"
+#include "common.h"
 #include "log.h"
 
 using namespace SimpleHTTP;
@@ -36,11 +37,11 @@ void ServerConnection::init(struct tcp_pcb* client) {
 	hijacted = false;
 	closeOnceSent = 0;
 	waitingForSendCompleteSize = 0;
-	bytesSentTotal = 0;
 	// new generation each (re)use so a stale detached Response can detect reuse
 	generation++;
 
 	lastRequestTime = 0;
+	lastSendCompleteTime = 0;
 
 	dataReceived = parseRequest;
 	dataReceivedArg = this;
@@ -111,7 +112,6 @@ bool ServerConnection::writeData(const uint8_t* data, int len, int writeFlags) {
 
 
 		dataLengthWritten = transport->write(data, size, apiFlags);
-
 
 		if (dataLengthWritten < 0) {
 			if (locked) {
@@ -208,13 +208,14 @@ bool ServerConnection::sendNextFromQueue() {
 		return true;
 	}
 	else {
+		SHTTP_LOGW(__FUNCTION__, "send write failed err=%d sndbuf=%d", dataWritten, transport->getAvailableSendBuffer());
 		return false;
 	}
 }
 
 Result ServerConnection::sendCompleteCallback(int length) {
 	//we are in lwip context here don't lock here (it's expected this is called from tcp_sent_cb)
-	//SHTTP_LOGI(__FUNCTION__,"waiting on size %d, buffer %d",waitingForSendCompleteSize,(int)transport->getAvailableSendBuffer());
+	lastSendCompleteTime = os_getUnixTime();
 	if (waitingForSendCompleteSize || !sendQueue.empty()) {
 		if (waitingForSendCompleteSize) {
 			waitingForSendCompleteSize -= length;
@@ -229,4 +230,13 @@ Result ServerConnection::sendCompleteCallback(int length) {
 		}
 	}
 	return OK;
+}
+
+void ServerConnection::pumpSendQueue() {
+	// re-attempt a stalled send without touching accounting; sending one chunk
+	// puts data back in flight so the normal ACK-driven pump (tcp_sent_cb)
+	// takes over and drains the rest
+	if (!sendQueue.empty() && hasAvailableSendBuffer()) {
+		sendNextFromQueue();
+	}
 }

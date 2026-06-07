@@ -34,9 +34,14 @@ namespace SimpleHTTP{
             static err_t tcp_sent_cb(void* arg, struct tcp_pcb* tpcb, u16_t len);
             static err_t tcp_recv_cb(void* arg, struct tcp_pcb* tpcb, struct pbuf* p, err_t err);
             static err_t tcp_accept_cb(void* arg, struct tcp_pcb* newpcb, err_t err);
+            static err_t tcp_poll_cb(void* arg, struct tcp_pcb* tpcb);
             static void tcp_err_cb(void* arg, err_t err);
 
         public:
+            // optional hook fired on every TCP ACK (from tcp_sent_cb) so an
+            // external producer can wake without the library depending on it.
+            static void (*sendCompleteNotify)();
+
             static void waitOnData();
             static void listen(int port);
 
