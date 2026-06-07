@@ -78,8 +78,6 @@ void Router::process()
 
 				auto handlerIt = handlers.find(path);
 				RequestHandler h = handlerIt != handlers.end() ? handlerIt->second : nullptr;
-				SHTTP_LOGI(__FUNCTION__,"handling request for path %s",path.c_str());
-				auto heapBefore = esp_get_free_heap_size();
 				if (h == 0)
 				{
 					defaultHandler(&client->currentRequest, &resp);
