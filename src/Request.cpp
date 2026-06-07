@@ -148,6 +148,9 @@ Result Request::parse(char* data, int length) {
 			hasMoreBodyDataSinceLastCheck = true;
 			goto moreData;
 		}
+		// Content-Length: 0 (or absent) — empty body, request is complete
+		parsingStage = WaitingComplete;
+		return OK;
 	}
 	case WaitingComplete:
 		;

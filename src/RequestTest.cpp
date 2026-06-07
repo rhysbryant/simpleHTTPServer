@@ -107,6 +107,30 @@ TEST(Request, fullRequestPOSTFullBodyContentLength) {
 	char expectedText[] = "Test";
 	GTEST_ASSERT_EQ(str, expectedText);
 }
+// regression: POST with Content-Length: 0 (empty body — e.g. Chrome's fetch() POST
+// with no body) must parse to OK, not ERROR.  The WaitingBody case previously fell
+// through to the end of the switch and returned ERROR when bodyLength == 0 and the
+// method is declared as having a body.
+TEST(Request, postEmptyBodyContentLengthZero) {
+	Request r;
+	string req("POST /auth/otp HTTP/1.1\r\nHost: 172.21.0.1\r\nContent-Length: 0\r\n\r\n");
+	auto result = r.parse((char*)req.c_str(), req.length());
+	GTEST_ASSERT_EQ(result, Result::OK);
+	GTEST_ASSERT_EQ(r.method, Request::POST);
+	GTEST_ASSERT_EQ(r.path, "/auth/otp");
+	GTEST_ASSERT_EQ(r.getAndClearForProcessing(), true);
+}
+
+// same fix applies to PUT with no body
+TEST(Request, putEmptyBodyContentLengthZero) {
+	Request r;
+	string req("PUT /settings HTTP/1.1\r\nHost: h\r\nContent-Length: 0\r\n\r\n");
+	auto result = r.parse((char*)req.c_str(), req.length());
+	GTEST_ASSERT_EQ(result, Result::OK);
+	GTEST_ASSERT_EQ(r.method, Request::PUT);
+	GTEST_ASSERT_EQ(r.getAndClearForProcessing(), true);
+}
+
 // regression: a body containing ':' followed by a newline must not be mis-parsed
 // as headers. The end-of-headers blank line has to be detected before scanning for
 // ':', otherwise parse runs past the blank line into the body, never finishes the
