@@ -62,8 +62,9 @@ void Router::process()
 			{
 
 				bool connectionKeepAlive = false;
-				auto connHeader = client->currentRequest.headers["CONNECTION"];
-				if (connHeader == "keep-alive" 
+				auto connHeaderIt = client->currentRequest.headers.find("CONNECTION");
+				auto connHeader = connHeaderIt != client->currentRequest.headers.end() ? connHeaderIt->second : std::string{};
+				if (connHeader == "keep-alive"
 				#if defined(SIMPLE_HTTP_RTSP_SUPPORT) && SIMPLE_HTTP_RTSP_SUPPORT == 1
 					//RTSP is keepalive by default
 					|| client->currentRequest.version == HTTPVersion::RTSP10
@@ -75,7 +76,10 @@ void Router::process()
 				Response resp(client, connectionKeepAlive,client->currentRequest.version);
 				auto path = client->currentRequest.path;
 
-				auto h = handlers[path];
+				auto handlerIt = handlers.find(path);
+				RequestHandler h = handlerIt != handlers.end() ? handlerIt->second : nullptr;
+				SHTTP_LOGI(__FUNCTION__,"handling request for path %s",path.c_str());
+				auto heapBefore = esp_get_free_heap_size();
 				if (h == 0)
 				{
 					defaultHandler(&client->currentRequest, &resp);
