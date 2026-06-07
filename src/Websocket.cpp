@@ -42,11 +42,18 @@ void Websocket::dataReceivedHandler(uint8_t *data, int dataSize)
 }
 
 Result Websocket::writeFrame(FrameType frameType,const Payload* payload) {
-	return writeFrame(conn, frameType, payload);
+	// capture conn once: another thread may unAssign() (conn = nullptr) on close
+	// between the manager's isInUse() check and this call
+	auto c = conn;
+	if (c == nullptr) {
+		return ERROR;
+	}
+	return writeFrame(c, frameType, payload);
 }
 
 Result Websocket::writeFrame(ServerConnection *conn, FrameType frameType,const Payload* payload)
 {
+
 	uint8_t header[5] = "";
 	uint8_t *headerPtr = header + 1;
 	header[0] = FlagFIN | frameType;
@@ -86,6 +93,11 @@ Result Websocket::writeFrame(ServerConnection *conn, FrameType frameType,const P
 	};
 
 	LOCK_TCPIP_CORE();
+	// race condition check: the connection at the last point before we use it
+	if (conn == nullptr) {
+		return ERROR;
+	}
+
 	if( totalPayloadSize + headerSize > conn->availableSendBuffer() ){
 		UNLOCK_TCPIP_CORE();
 		return ERROR;
