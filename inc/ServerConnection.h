@@ -84,6 +84,15 @@ namespace SimpleHTTP {
 		static const int maxSendSize = 4096;
 
 		uint32_t lastRequestTime;
+		// time of the most recent TCP ACK from the remote (ms, from os_getUnixTime()).
+		// Bumped in sendCompleteCallback (tcp_sent_cb). Non-zero means at least one
+		// ACK has been received on this connection since it was initialised.
+		uint32_t lastSendCompleteTime;
+
+		// bumped on every init() so a detached (async) Response can detect that this
+		// pooled connection has been closed+reused and stop writing to it. Starts at
+		// 1; generation 0 means "don't check" for writeData callers that don't track it.
+		uint32_t generation = 0;
 
 		Request currentRequest;
 
@@ -135,6 +144,13 @@ namespace SimpleHTTP {
 		static const int WriteFlagNoFlush = Transport::WriteFlagNoFlush;
 
 		bool writeData(const uint8_t* data, int len, int writeFlags);
+
+		// true if this connection is still on the generation the caller expects (and
+		// connected). Lets a detached (async) Response detect that this pooled
+		// connection has been closed+reused and stop writing to it.
+		inline bool isGeneration(uint32_t expectedGeneration) {
+			return isConnected() && generation == expectedGeneration;
+		}
 
 		void queueResponseWriteCallback(MoreDataCallback callback, void* arg);
 

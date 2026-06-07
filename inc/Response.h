@@ -97,6 +97,9 @@ namespace SimpleHTTP {
 		ConnectionMode connectionMode;
 
 		ServerConnection* client;
+		// the connection generation this Response was created for; passed to writeData
+		// so a detached (async) Response never writes to a closed+reused connection
+		uint32_t connectionGeneration;
 
 		Result flush(bool finalize, bool flushNetworkBuffer);
 		/**
@@ -196,6 +199,29 @@ namespace SimpleHTTP {
 		* and the response finalized
 		**/
 		void write(ReadyForSendCallback callback, void* arg);
+
+		/**
+		 * detach this response for use beyond the current handler: returns a heap copy
+		 * (carrying any unflushed headers/body) that stays valid after the handler
+		 * returns, and neuters this original so the framework won't also finalize it.
+		 * the OWNER of the returned Response* is responsible for driving it
+		 * (write()/getConnectionStatus()), then completeAsyncResponse() and delete.
+		 */
+		Response* asyncResponse();
+
+		/**
+		 * finish a detached async response: flush any buffered body and, for a
+		 * Connection: close response, arrange the connection to close once sent.
+		 * the owner calls this when it is done writing the body.
+		 */
+		void completeAsyncResponse();
+
+		/**
+		 * true while the underlying connection is still the one this response was
+		 * created for (connected and not closed+reused) - an async owner should stop
+		 * and tear down once this returns false.
+		 */
+		inline bool connectionValid() { return client->isGeneration(connectionGeneration); }
 
 		/**
 		 * writes directly to the network without buffering

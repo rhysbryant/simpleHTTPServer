@@ -36,6 +36,9 @@ void ServerConnection::init(struct tcp_pcb* client) {
 	hijacted = false;
 	closeOnceSent = 0;
 	waitingForSendCompleteSize = 0;
+	bytesSentTotal = 0;
+	// new generation each (re)use so a stale detached Response can detect reuse
+	generation++;
 
 	lastRequestTime = 0;
 

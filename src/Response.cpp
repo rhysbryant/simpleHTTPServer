@@ -34,6 +34,7 @@ Response::Response(ServerConnection* conn, bool connectionKeepAlive, HTTPVersion
 	chunkedEncoding = true;
 	connectionMode = connectionKeepAlive ? ConnectionKeepAlive : ConnectionClose;
 	client = conn;
+	connectionGeneration = conn->generation;
 	responseVersion = requestVersion;
 	isAsync = false;
 }
@@ -49,6 +50,7 @@ Response::Response(const Response* response)
 	chunkedEncoding = response->chunkedEncoding;
 	connectionMode = response->connectionMode;
 	client = response->client;
+	connectionGeneration = response->connectionGeneration;
 	responseVersion = response->responseVersion;
 	isAsync = response->isAsync;
 	responseSizeTotal = response->responseSizeTotal;
@@ -416,6 +418,26 @@ Result Response::networkWrite(char* data, int length, bool flush)
 	}
 
 	return ERROR;
+}
+
+Response* Response::asyncResponse()
+{
+	// heap copy carries the unflushed headers/body and stays valid past the handler;
+	// neuter the original (isAsync) so the framework won't also finalize/flush it.
+	// (copy ctor runs before isAsync=true here, so the copy has isAsync=false and its
+	// finalize()/completeAsyncResponse() does the real flushing.)
+	auto copy = new Response(this);
+	isAsync = true;
+	return copy;
+}
+
+void Response::completeAsyncResponse()
+{
+	flush(true, true);
+	if (connectionMode == ConnectionClose)
+	{
+		client->closeOnceSent = 1;
+	}
 }
 const constexpr char Response::EOL[];
 const constexpr struct SimpleString Response::statusStrings[];
