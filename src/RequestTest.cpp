@@ -160,6 +160,39 @@ TEST(Request, multiPacketBodyReassembles) {
 	GTEST_ASSERT_EQ(got, body);
 }
 
+// regression: a single recv can deliver a pbuf chain, so parse() is called once
+// per link - several times in a row BEFORE the handler reads any body - leaving
+// more buffered than a single readBody() drains. Reading it back out in chunks
+// SMALLER than what is buffered must reassemble the whole body. (Server::tcp_recv_cb
+// only parsed the first link of the chain, so a multi-pbuf body stalled after the
+// first ~pbuf and the upload looped forever returning 0 bytes.)
+TEST(Request, bodyMoreParsedThanReadReassembles) {
+	Request r;
+	string headers("PUT /up HTTP/1.1\r\nHost: h\r\nContent-Length: 26\r\n\r\n");
+	string body = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"; // 26 bytes
+	string p1 = headers + body.substr(0, 10);    // headers + first link
+	string p2 = body.substr(10, 10);             // further links of the same recv
+	string p3 = body.substr(20);                 // chain, parsed before any read
+
+	// parse the whole chain first (nothing read out yet)
+	r.parse((char*)p1.c_str(), p1.size());
+	r.parse((char*)p2.c_str(), p2.size());
+	r.parse((char*)p3.c_str(), p3.size());
+
+	// drain in 4-byte chunks - smaller than the 26 bytes now buffered
+	string got;
+	char buf[4];
+	Result br = MoreData;
+	for (int i = 0; i < 100 && br == MoreData; i++) {
+		int s = sizeof(buf);
+		br = r.readBody(buf, &s);
+		got.append(buf, s);
+	}
+
+	GTEST_ASSERT_EQ(br, Result::OK);
+	GTEST_ASSERT_EQ(got, body);
+}
+
 //one parse call consumes the full payload
 TEST(Request, fullRequestPOSTFullBodyChunked) {
 	Request r;

@@ -299,15 +299,17 @@ Result Request::readBody(char* dstBuffer, int* dstBufferSize) {
 	if (bodyLength != 0) {
 		int sizeToCopy = bodyLength;
 		int dataInRequestBuffer = requestBufferEnd - requestBufferReadPos;
-		if (sizeToCopy >= dataInRequestBuffer) {
+		if (sizeToCopy > dataInRequestBuffer) {
 			sizeToCopy = dataInRequestBuffer;
-			atEndOfBuffer = true;
 		}
 
 		int spaceInDstBuffer = outputBufferSize;
-		if (sizeToCopy >= spaceInDstBuffer) {
+		if (sizeToCopy > spaceInDstBuffer) {
 			sizeToCopy = spaceInDstBuffer;
 		}
+
+		// reset the request buffer only once every buffered byte has been consumed
+		atEndOfBuffer = (sizeToCopy == dataInRequestBuffer);
 
 		memcpy(dstBuffer, requestBufferReadPos, sizeToCopy);
 		requestBufferReadPos += sizeToCopy;
@@ -355,6 +357,7 @@ void Request::reset() {
 	parsingStage = WaitingRequestLine;
 	lastResult = Result::OK;
 	requestBuffer.clear();
+	requestBuffer.shrink_to_fit();
 	bodyEncodingChunked = false;
 	bodyReadInProgress = false;
 	hasMoreBodyDataSinceLastCheck = false;
