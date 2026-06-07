@@ -21,27 +21,31 @@
 #include "ServerConnection.h"
 #include <string>
 namespace SimpleHTTPTest {
-	//Dummy Connection for Testing
-	class MockServerConnection: public SimpleHTTP::ServerConnection {
 
+	class MockTransport : public SimpleHTTP::Internal::Transport {
+	public:
+		std::string* buffer;
+		explicit MockTransport(std::string* buf) : buffer(buf) {}
+		err_t shutdown() override { return ERR_OK; }
+		int write(const void* dataptr, u16_t len, uint8_t) override {
+			buffer->append((const char*)dataptr, len);
+			return len;
+		}
+		int getAvailableSendBuffer() override { return 4096; }
+		bool getRemoteIPAddress(char*, int) override { return false; }
+	};
+
+	//Dummy Connection for Testing
+	class MockServerConnection : public SimpleHTTP::ServerConnection {
 	public:
 		std::string buffer;
 	private:
-		tcp_pcb mockSocket{ & buffer };
+		tcp_pcb mockSocket{};
+		MockTransport mockTransport;
 	public:
-		
-		static inline int writeDataMock(tcp_pcb* pcb, const void* dataptr, u16_t len, uint8_t apiflags) {
-			auto buffer = (std::string*)pcb->arg;
-			buffer->append((char*)dataptr, len);
-			return len;
+		MockServerConnection() : mockTransport(&buffer) {
+			init(&mockSocket, &mockTransport);
 		}
-
-		MockServerConnection() {
-			
-			init(&mockSocket, writeDataMock);
-		}
-
-
 
 		inline bool write(uint8_t* data, uint16_t len) {
 			buffer.append((char*)data, len);

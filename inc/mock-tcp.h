@@ -82,10 +82,12 @@ inline err_t tcp_write(struct tcp_pcb* client,uint8_t* data,int size, uint8_t ap
 	return ERR_OK;
 }
 
+inline int tcp_sndbuf(struct tcp_pcb* client) { return 4096; }
+
 inline err_t tcp_output(struct tcp_pcb* client) { return ERR_OK;  }
 
 inline err_t tcp_close(struct tcp_pcb* client) { return ERR_OK; }
 
 inline err_t tcp_abort(struct tcp_pcb* client) { return ERR_OK; }
 
-inline int ip4addr_ntoa_r(int *v, char* b, int len);
+inline int ip4addr_ntoa_r(int *v, char* b, int len) { return 0; }

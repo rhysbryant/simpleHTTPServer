@@ -212,6 +212,7 @@ TEST(Request, fullRequestPOSTFullBodyChunked) {
 	GTEST_ASSERT_EQ(str, expectedText);
 }
 
+#if defined(SIMPLE_HTTP_RTSP_SUPPORT) && SIMPLE_HTTP_RTSP_SUPPORT == 1
 TEST(Request, fullRequestRTSPDescribe) {
 	char request[] = {
 	0x44, 0x45, 0x53, 0x43, 0x52, 0x49, 0x42, 0x45,
@@ -295,6 +296,5 @@ TEST(Request, fullRequestRTSPDescribe) {
 	GTEST_ASSERT_EQ(r.method, Request::RTSP_DESCRIBE);
 	GTEST_ASSERT_EQ(r.getBodyLength(), 0);
 	GTEST_ASSERT_EQ(r.getAndClearForProcessing(), true);
-
-
 }
+#endif
